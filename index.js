@@ -38,6 +38,8 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
     const db = loadDB();
 
+    // --- KOMENDY ADMINISTRATORA ---
+
     if (command === 'dodajmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
@@ -46,6 +48,29 @@ client.on('messageCreate', async message => {
         db.matches[matchId] = { details: matchDetails };
         saveDB(db);
         return message.reply(`✅ Dodano mecz **ID: ${matchId}** (${matchDetails}).`);
+    }
+
+    if (command === 'edytujmecz') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        const matchId = args[0];
+        const newDetails = args.slice(1).join(' ');
+        if (!matchId || !newDetails) return message.reply('❌ Użycie: `!edytujmecz [ID] [Nowa nazwa]`');
+        if (!db.matches[matchId]) return message.reply('❌ Taki mecz nie istnieje!');
+        
+        db.matches[matchId].details = newDetails;
+        saveDB(db);
+        return message.reply(`✅ Zaktualizowano mecz **ID: ${matchId}** na: *${newDetails}*`);
+    }
+
+    if (command === 'usunmecz') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        const matchId = args[0];
+        if (!matchId) return message.reply('❌ Użycie: `!usunmecz [ID]`');
+        if (!db.matches[matchId]) return message.reply('❌ Taki mecz nie istnieje!');
+
+        delete db.matches[matchId];
+        saveDB(db);
+        return message.reply(`🗑️ Usunięto mecz o ID: **${matchId}**`);
     }
 
     if (command === 'zamknij') {
@@ -60,6 +85,13 @@ client.on('messageCreate', async message => {
         db.settings.locked = false;
         saveDB(db);
         return message.reply('🔓 Typowanie zostało **otwarte**.');
+    }
+
+    if (command === 'resetranking') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        db.users = {};
+        saveDB(db);
+        return message.reply('🔄 Ranking oraz historia typów wszystkich graczy zostały zresetowane.');
     }
 
     if (command === 'rozlicz') {
@@ -93,6 +125,19 @@ client.on('messageCreate', async message => {
         return message.channel.send(resultsSummary);
     }
 
+    // --- KOMENDY DLA GRACZY ---
+
+    if (command === 'mecze') {
+        const matchKeys = Object.keys(db.matches);
+        if (matchKeys.length === 0) return message.reply('📌 Brak aktywnych meczów.');
+        let desc = '';
+        for (const mId of matchKeys) {
+            desc += `• **ID ${mId}**: ${db.matches[mId].details}\n`;
+        }
+        const embed = new EmbedBuilder().setTitle('📋 Lista aktywnych meczów').setDescription(desc).setColor(0x0099FF);
+        return message.reply({ embeds: [embed] });
+    }
+
     if (command === 'typ') {
         if (db.settings.locked) return message.reply('❌ Typowanie jest aktualnie zablokowane przez administratora!');
         const matchId = args[0];
@@ -111,9 +156,30 @@ client.on('messageCreate', async message => {
         const userData = db.users[message.author.id];
         if (!userData || Object.keys(userData.predictions).length === 0) return message.reply('📌 Brak zapisanych typów.');
         let desc = '';
-        for (const mId in userData.predictions) desc += `• ID ${mId}: ${userData.predictions[mId]}\n`;
+        for (const mId in userData.predictions) {
+            const matchName = db.matches[mId] ? db.matches[mId].details : 'Mecz usunięty';
+            desc += `• **[ID ${mId}]** ${matchName} ➔ **${userData.predictions[mId]}**\n`;
+        }
         const embed = new EmbedBuilder().setTitle('Twoje typy').setDescription(desc).setColor(0x00AE86);
-        return message.reply({ embeds: [embed] });
+        return message.reply({ embeds: [embed], ephemeral: true });
+    }
+
+    if (command === 'historia') {
+        const userData = db.users[message.author.id];
+        if (!userData || Object.keys(userData.predictions).length === 0) return message.reply('📜 Nie masz jeszcze żadnej historii typów.');
+        
+        let desc = `Masz aktualnie **${userData.points || 0} pkt**.\n\n**Twoje dotychczasowe typy:**\n`;
+        for (const mId in userData.predictions) {
+            const matchName = db.matches[mId] ? db.matches[mId].details : 'Mecz zakończony/usunięty';
+            desc += `• Mecz ID **${mId}** (${matchName}): ` + `\`${userData.predictions[mId]}\`\n`;
+        }
+        
+        const embed = new EmbedBuilder()
+            .setTitle('📜 Twoja historia typów')
+            .setDescription(desc)
+            .setColor(0x9B59B6);
+            
+        return message.reply({ embeds: [embed], flags: 64 }); // 64 ukrywa wiadomość, widzi ją tylko dany gracz
     }
 
     if (command === 'ranking' || command === 'punkty') {
@@ -131,4 +197,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-    
+            
