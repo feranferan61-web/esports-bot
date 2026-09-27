@@ -15,10 +15,12 @@ const DB_FILE = './database.json';
 
 function loadDB() {
     if (!fs.existsSync(DB_FILE)) {
-        const initialData = { matches: {}, users: {}, settings: { locked: false, deadline: null } };
+        const initialData = { matches: {}, users: {}, settings: { locked: false } };
         fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
     }
-    return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    if (!data.settings) data.settings = { locked: false };
+    return data;
 }
 
 function saveDB(data) {
@@ -46,21 +48,13 @@ client.on('messageCreate', async message => {
         return message.reply(`✅ Dodano mecz **ID: ${matchId}** (${matchDetails}).`);
     }
 
-    if (command === 'cooldown') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
-        const deadline = args[0];
-        if (!deadline) return message.reply('❌ Podaj datę/godzinę (np. `2026-06-01T18:00`)');
-        db.settings.deadline = deadline;
-        saveDB(db);
-        return message.reply(`⏳ Ustawiono deadline do: **${deadline}**`);
-    }
-
     if (command === 'zamknij') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.settings.locked = true;
         saveDB(db);
         return message.reply('🔒 Typowanie zostało **zamknięte**.');
     }
+    
     if (command === 'otworz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.settings.locked = false;
@@ -100,8 +94,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'typ') {
-        if (db.settings.locked) return message.reply('❌ Typowanie jest zablokowane!');
-        if (db.settings.deadline && new Date() > new Date(db.settings.deadline)) return message.reply('❌ Czas na typowanie minął!');
+        if (db.settings.locked) return message.reply('❌ Typowanie jest aktualnie zablokowane przez administratora!');
         const matchId = args[0];
         const pred = args.slice(1).join(' ');
         if (!matchId || !pred) return message.reply('❌ Użycie: `!typ [ID_meczu] [Twój typ]`');
@@ -138,4 +131,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-  
+    
