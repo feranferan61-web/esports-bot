@@ -47,7 +47,6 @@ setInterval(() => {
     let modified = false;
     const now = new Date();
 
-    // 1. Sprawdzanie globalnego zablokowania
     if (!db.settings.locked && db.settings.lockTime) {
         const targetTime = new Date(db.settings.lockTime);
         if (now >= targetTime) {
@@ -64,7 +63,6 @@ setInterval(() => {
         }
     }
 
-    // 2. Sprawdzanie automatycznego zamykania poszczególnych meczów
     for (const mId in db.matches) {
         const match = db.matches[mId];
         if (!match.locked && match.lockTime) {
@@ -100,7 +98,7 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
     const db = loadDB();
 
-    // --- KOMENDA POMOCY ---
+    // --- KOMENDA POMOCY (ZAWIERA TERAZ !profil) ---
     if (command === 'komendy' || command === 'pomoc') {
         const embed = new EmbedBuilder()
             .setTitle('📖 Lista komend bota e-sportowego')
@@ -112,7 +110,7 @@ client.on('messageCreate', async message => {
                         '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i terminy zamknięcia\n' +
                         '`!typ [ID] [Twój typ]` - Obstawiasz wynik konkretnego meczu\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
-                        '`!profil` (lub `!statystyki`) - Wyświetla Twój profil gracza, punkty i dokładne statystyki trafień\n' +
+                        '`!profil` (lub `!statystyki`) - Wyświetla Twój profil gracza, punkty i statystyki trafień\n' +
                         '`!historia` - Sprawdza Twoją pełną historię typów\n' +
                         '`!prywatnykanal` - Tworzy Twój osobisty, prywatny wątek na serwerze'
                 },
@@ -287,13 +285,12 @@ client.on('messageCreate', async message => {
             if (!p) continue;
             count++;
             
-            // Inicjalizacja pól statystyk, jeśli ich nie ma
             if (user.points === undefined) user.points = 0;
             if (user.exactHits === undefined) user.exactHits = 0;
             if (user.winnerHits === undefined) user.winnerHits = 0;
             if (user.settledCount === undefined) user.settledCount = 0;
 
-            user.settledCount += 1; // Zwiększamy liczbę rozliczonych typów gracza
+            user.settledCount += 1;
 
             if (p.toLowerCase() === `${winner} ${exactScore}`.toLowerCase()) {
                 user.points += 3;
@@ -352,25 +349,19 @@ client.on('messageCreate', async message => {
 
     if (command === 'profil' || command === 'statystyki') {
         const userId = message.author.id;
-        const userData = db.users[userId];
-
-        if (!userData || Object.keys(userData.predictions).length === 0) {
-            return message.reply('📌 Nie masz jeszcze żadnych typów ani statystyk. Obstaw swój pierwszy mecz komendą `!typ`!');
-        }
+        const userData = db.users[userId] || { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
 
         const points = userData.points || 0;
         const exactHits = userData.exactHits || 0;
         const winnerHits = userData.winnerHits || 0;
         const settledCount = userData.settledCount || 0;
-        const totalPreds = Object.keys(userData.predictions).length;
+        const totalPreds = userData.predictions ? Object.keys(userData.predictions).length : 0;
 
-        // Obliczanie skuteczności procentowej na podstawie rozliczonych meczów
         let winRate = 0;
         if (settledCount > 0) {
             winRate = Math.round(((exactHits + winnerHits) / settledCount) * 100);
         }
 
-        // Ustalanie pozycji w rankingu
         const sortedUsers = Object.entries(db.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0));
         const userRankIndex = sortedUsers.findIndex(([id]) => id === userId);
         const rankText = userRankIndex !== -1 ? `#${userRankIndex + 1}` : 'Poza rankingiem';
@@ -383,7 +374,7 @@ client.on('messageCreate', async message => {
                 { name: '🎯 Złote strzały (3 pkt)', value: `**${exactHits}**`, inline: true },
                 { name: '✅ Trafieni zwycięzcy (1 pkt)', value: `**${winnerHits}**`, inline: true },
                 { name: '📈 Skuteczność', value: `**${winRate}%** (z ${settledCount} rozliczonych)`, inline: true },
-                { name: '📌 Liczba aktywnych typów', value: `**${totalPreds}**`, inline: true }
+                { name: '📌 Liczba obstawionych typów', value: `**${totalPreds}**`, inline: true }
             )
             .setThumbnail(message.author.displayAvatarURL());
 
@@ -435,4 +426,13 @@ client.on('messageCreate', async message => {
 
             await thread.members.add(message.author.id);
 
-            return message.repl
+            return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
+        } catch (error) {
+            console.error('Błąd tworzenia wątku:', error);
+            return message.reply('❌ Nie udało się utworzyć prywatnego wątku.');
+        }
+    }
+});
+
+client.login(TOKEN);
+        
