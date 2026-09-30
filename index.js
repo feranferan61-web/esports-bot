@@ -1,6 +1,6 @@
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
 const fs = require('fs');
-const http = require('http'); // Wbudowany moduł Node.js do tworzenia serwera WWW
+const http = require('http');
 
 // --- MINI SERWER HTTP DLA UPTIMEROBOTA ---
 const server = http.createServer((req, res) => {
@@ -28,11 +28,12 @@ const DB_FILE = './database.json';
 
 function loadDB() {
     if (!fs.existsSync(DB_FILE)) {
-        const initialData = { matches: {}, users: {}, settings: { locked: false, lockTime: null } };
+        const initialData = { matches: {}, users: {}, settings: { locked: false, lockTime: null }, nextMatchId: 1 };
         fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
     }
     const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     if (!data.settings) data.settings = { locked: false, lockTime: null };
+    if (!data.nextMatchId) data.nextMatchId = 1; // Zabezpieczenie dla starszych baz danych
     return data;
 }
 
@@ -90,15 +91,15 @@ client.on('messageCreate', async message => {
                 { 
                     name: '🛡️ Komendy dla administratora', 
                     value: 
-                        '`!dodajmecz [ID] [Nazwa]` - Dodaje nowy mecz\n' +
+                        '`!dodajmecz [Nazwa]` - Automatycznie dodaje kolejny mecz (np. 1, 2, 3...)\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę meczu\n' +
                         '`!usunmecz [ID]` - Usuwa wskazany mecz\n' +
                         '`!zamknij` - Ręcznie blokuje typowanie\n' +
                         '`!otworz` - Ręcznie odblokowuje typowanie\n' +
                         '`!zamknijok [HH:MM]` - Ustawia automatyczne zamknięcie o wybranej godzinie\n' +
                         '`!rozlicz [ID] [Zwycięzca] [Wynik]` - Rozlicza mecz i przyznaje punkty\n' +
-                        '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy (Tylko Admin)\n' +
-                        '`!resetranking` - Resetuje ranking i punkty wszystkich graczy'
+                        '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
+                        '`!resetranking` - Resetuje ranking, punkty i resetuje numerację meczów do 1'
                 }
             );
         return message.reply({ embeds: [embed] });
@@ -107,12 +108,15 @@ client.on('messageCreate', async message => {
     // --- KOMENDY ADMINISTRATORA ---
     if (command === 'dodajmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
-        const matchId = args[0];
-        const matchDetails = args.slice(1).join(' ');
-        if (!matchId || !matchDetails) return message.reply('❌ Użycie: `!dodajmecz [ID] [Nazwa]`');
+        const matchDetails = args.join(' ');
+        if (!matchDetails) return message.reply('❌ Użycie: `!dodajmecz [Nazwa meczu]` (ID nadasze się automatycznie!)');
+        
+        const matchId = db.nextMatchId.toString(); // Pobiera kolejny automatyczny numer
+        db.nextMatchId++; // Zwiększa licznik na następny raz
+
         db.matches[matchId] = { details: matchDetails };
         saveDB(db);
-        return message.reply(`✅ Dodano mecz **ID: ${matchId}** (${matchDetails}).`);
+        return message.reply(`✅ Dodano mecz z automatycznym **ID: ${matchId}** (${matchDetails}).`);
     }
 
     if (command === 'edytujmecz') {
@@ -182,8 +186,10 @@ client.on('messageCreate', async message => {
     if (command === 'resetranking') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.users = {};
+        db.matches = {}; // Czyści też aktywne mecze przy resecie
+        db.nextMatchId = 1; // Resetuje licznik ID z powrotem do 1!
         saveDB(db);
-        return message.reply('🔄 Ranking oraz historia typów wszystkich graczy zostały zresetowane.');
+        return message.reply('🔄 Ranking, historia typów, aktywne mecze zostały wyczyszczone, a licznik ID zresetowany do **1**.');
     }
 
     if (command === 'ranking' || command === 'punkty') {
@@ -312,4 +318,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-                    
+                        
