@@ -41,6 +41,13 @@ function saveDB(data) {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
+// Uniwersalna funkcja do wyciągania samego wyniku (np. "2-1", "3:0") z dowolnego tekstu
+function extractScore(text) {
+    if (!text) return null;
+    const match = text.toString().match(/\d+[-:]\d+/);
+    return match ? match[0].replace(':', '-') : null;
+}
+
 // Mechanizm sprawdzający automatyczne zamykanie co 60 sekund
 setInterval(() => {
     const db = loadDB();
@@ -108,7 +115,7 @@ client.on('messageCreate', async message => {
                     name: '🎮 Komendy dla graczy', 
                     value: 
                         '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i terminy zamknięcia\n' +
-                        '`!typ [ID] [Twój typ]` - Obstawiasz wynik konkretnego meczu\n' +
+                        '`!typ [ID] [Twój typ]` - Obstawiasz wynik konkretnego meczu (np. `!typ 1 2-1`)\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
                         '`!profil` (lub `!statystyki`) - Wyświetla Twój profil gracza, punkty i statystyki trafień\n' +
                         '`!historia` - Sprawdza Twoją pełną historię typów\n' +
@@ -117,16 +124,15 @@ client.on('messageCreate', async message => {
                 { 
                     name: '🛡️ Komendy dla administratora', 
                     value: 
-                        '`!dodajmecz [Nazwa]` - Automatycznie dodaje kolejny mecz (np. 1, 2, 3...)\n' +
+                        '`!dodajmecz [Nazwa]` - Automatycznie dodaje kolejny mecz\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę meczu\n' +
                         '`!usunmecz [ID]` - Usuwa wskazany mecz\n' +
-                        '`!zamknij` - Ręcznie blokuje typowanie globalnie\n' +
-                        '`!otworz` - Ręcznie odblokowuje typowanie globalnie\n' +
-                        '`!zamknijok [HH:MM]` - Ustawia globalne zamknięcie o wybranej godzinie\n' +
-                        '`!zamknijmecz [ID] [HH:MM]` LUB `[RRRR-MM-DD HH:MM]` - Ustawia automatyczne zamknięcie dla konkretnego meczu\n' +
-                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz i przyznaje punkty oraz statystyki\n' +
+                        '`!zamknij` / `!otworz` - Blokuje/odblokowuje typowanie globalnie\n' +
+                        '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie konkretnego meczu\n' +
+                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz i przyznaje punkty\n' +
+                        '`!naprawpunkty [ID] [Wynik]` - Służy do poprawienia rozliczenia (jeśli wynik wcześniej się nie dopasował)\n' +
                         '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
-                        '`!resetranking` - Resetuje ranking, punkty i numerację meczów do 1'
+                        '`!resetranking` - Resetuje ranking i statystyki'
                 }
             );
         return message.reply({ embeds: [embed] });
@@ -141,11 +147,7 @@ client.on('messageCreate', async message => {
         const matchId = db.nextMatchId.toString();
         db.nextMatchId++;
 
-        db.matches[matchId] = { 
-            details: matchDetails, 
-            locked: false, 
-            lockTime: null 
-        };
+        db.matches[matchId] = { details: matchDetails, locked: false, lockTime: null };
         saveDB(db);
         return message.reply(`✅ Dodano mecz z automatycznym **ID: ${matchId}** (${matchDetails}).`);
     }
@@ -189,58 +191,27 @@ client.on('messageCreate', async message => {
         return message.reply('🔓 Typowanie globalne zostało **otwarte**.');
     }
 
-    if (command === 'zamknijok') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
-        const timeArg = args.join(' ');
-        if (!timeArg) return message.reply('❌ Użycie: `!zamknijok [HH:MM]`');
-
-        let targetDate;
-        if (timeArg.includes('-')) {
-            targetDate = new Date(timeArg);
-        } else {
-            const now = new Date();
-            const [hours, minutes] = timeArg.split(':');
-            if (!hours || !minutes) return message.reply('❌ Błędny format godziny! Użyj `HH:MM`');
-            now.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-            targetDate = now;
-        }
-
-        if (isNaN(targetDate.getTime())) return message.reply('❌ Nieprawidłowy format czasu!');
-
-        db.settings.lockTime = targetDate.toISOString();
-        db.settings.locked = false;
-        saveDB(db);
-        
-        return message.reply(`⏰ Zaplanowano globalne zamknięcie typowania na: **${targetDate.toLocaleString('pl-PL')}**`);
-    }
-
     if (command === 'zamknijmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
         const restArgs = args.slice(1);
-        if (!matchId || restArgs.length === 0) return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` lub `!zamknijmecz [ID] [RRRR-MM-DD HH:MM]`');
+        if (!matchId || restArgs.length === 0) return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]`');
         if (!db.matches[matchId]) return message.reply('❌ Taki mecz nie istnieje!');
 
-        let targetDate;
-        if (restArgs.length >= 2 && restArgs[0].includes('-')) {
-            const dateTimeString = `${restArgs[0]}T${restArgs[1]}:00`;
-            targetDate = new Date(dateTimeString);
-        } else {
-            const timeArg = restArgs.join(' ');
-            const [hours, minutes] = timeArg.split(':');
-            if (!hours || !minutes) return message.reply('❌ Błędny format! Użyj `HH:MM` lub `RRRR-MM-DD HH:MM`');
-            
-            targetDate = new Date();
-            targetDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-        }
+        const timeArg = restArgs.join(' ');
+        const [hours, minutes] = timeArg.split(':');
+        if (!hours || !minutes) return message.reply('❌ Błędny format! Użyj `HH:MM`');
+        
+        const targetDate = new Date();
+        targetDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
 
-        if (isNaN(targetDate.getTime())) return message.reply('❌ Nieprawidłowy format daty lub czasu!');
+        if (isNaN(targetDate.getTime())) return message.reply('❌ Nieprawidłowy format czasu!');
 
         db.matches[matchId].lockTime = targetDate.toISOString();
         db.matches[matchId].locked = false;
         saveDB(db);
 
-        return message.reply(`⏰ Mecz **ID ${matchId}** (${db.matches[matchId].details}) zamknie się automatycznie: **${targetDate.toLocaleString('pl-PL')}**`);
+        return message.reply(`⏰ Mecz **ID ${matchId}** zamknie się automatycznie: **${targetDate.toLocaleString('pl-PL')}**`);
     }
 
     if (command === 'resetranking') {
@@ -251,7 +222,7 @@ client.on('messageCreate', async message => {
         db.settings.locked = false;
         db.settings.lockTime = null;
         saveDB(db);
-        return message.reply('🔄 Ranking, historia typów, aktywne mecze zostały wyczyszczone, a licznik ID zresetowany do **1**.');
+        return message.reply('🔄 Wyczyszczono ranking, mecze i zresetowano licznik ID do **1**.');
     }
 
     if (command === 'ranking' || command === 'punkty') {
@@ -269,28 +240,24 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    if (command === 'rozlicz') {
+    // Główna funkcja rozliczająca oparta o czystą ekstrakcję wyników (np. "2-1")
+    if (command === 'rozlicz' || command === 'naprawpunkty') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
-        const matchResultFull = args.slice(1).join(' ').toLowerCase(); 
+        const rawResultInput = args.slice(1).join(' ');
         
-        if (!matchId || !matchResultFull) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 Vitality 2-1` lub `!rozlicz 1 2-1`)');
+        if (!matchId || !rawResultInput) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 2-1` lub `!rozlicz 1 Vitality 2-1`)');
 
-        // Funkcja pomocnicza wyciągająca sam wynik (np. "2-1", "3-2") z dowolnego tekstu
-        const extractScore = (text) => {
-            const match = text.match(/\d+[-:]\d+/);
-            return match ? match[0] : null;
-        };
+        const adminScore = extractScore(rawResultInput);
+        if (!adminScore) return message.reply('❌ Nie znaleziono poprawnego wyniku (np. `2-1`, `2:0`) w podanym tekście!');
 
-        const adminScore = extractScore(matchResultFull);
-
-        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik: **${args.slice(1).join(' ')}**\n\n`;
+        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik oficjalny: **${adminScore}**\n\n`;
         let count = 0;
 
         for (const userId in db.users) {
             const user = db.users[userId];
-            const p = user.predictions[matchId];
-            if (!p) continue;
+            const playerPred = user.predictions ? user.predictions[matchId] : null;
+            if (!playerPred) continue;
             count++;
             
             if (user.points === undefined) user.points = 0;
@@ -300,32 +267,15 @@ client.on('messageCreate', async message => {
 
             user.settledCount += 1;
 
-            const cleanP = p.toLowerCase().trim();
-            const userScore = extractScore(cleanP);
+            const playerExtractedScore = extractScore(playerPred);
 
-            // Warunek dopasowania:
-            // 1. Pełne teksty są identyczne LUB
-            // 2. Jeden zawiera drugi LUB
-            // 3. Wyniki numeryczne (np. "2-1") są identyczne, nawet jeśli admin podał nazwę drużyny a gracz sam wynik
-            const isExactMatch = 
-                cleanP === matchResultFull || 
-                matchResultFull.includes(cleanP) || 
-                cleanP.includes(matchResultFull) ||
-                (adminScore && userScore && adminScore === userScore);
-
-            if (isExactMatch) {
-                // Jeśli zawiera wynik punktowy (np. zawiera "-" lub ":") -> 3 punkty za dokładny wynik
-                if (cleanP.includes('-') || cleanP.includes(':') || matchResultFull.includes('-') || matchResultFull.includes(':') || userScore || adminScore) {
-                    user.points += 3;
-                    user.exactHits += 1;
-                    resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${p})! **+3 pkt**\n`;
-                } else {
-                    user.points += 1;
-                    user.winnerHits += 1;
-                    resultsSummary += `✅ <@${userId}> trafił zwycięzcę (${p})! **+1 pkt**\n`;
-                }
+            // Porównujemy wyłącznie wyekstraktowane wyniki numeryczne (np. "2-1" === "2-1")
+            if (playerExtractedScore && playerExtractedScore === adminScore) {
+                user.points += 3;
+                user.exactHits += 1;
+                resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${playerPred})! **+3 pkt**\n`;
             } else {
-                resultsSummary += `❌ <@${userId}> pomylił się (${p}). 0 pkt\n`;
+                resultsSummary += `❌ <@${userId}> pomylił się (${playerPred}). 0 pkt\n`;
             }
         }
         saveDB(db);
@@ -433,4 +383,30 @@ client.on('messageCreate', async message => {
             .setColor(0x9B59B6);
             
         return message.reply({ embeds: [embed], flags: 64 });
-  
+    }
+
+    if (command === 'prywatnykanal') {
+        try {
+            if (!message.channel.isTextBased() || message.channel.isDMBased()) {
+                return message.reply('❌ Tej komendy można użyć tylko na zwykłym kanale tekstowym serwera.');
+            }
+
+            const thread = await message.channel.threads.create({
+                name: `typy-${message.author.username}`,
+                autoArchiveDuration: 1440,
+                type: ChannelType.PrivateThread,
+                reason: `Prywatny kanał do typowania dla użytkownika ${message.author.tag}`
+            });
+
+            await thread.members.add(message.author.id);
+
+            return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
+        } catch (error) {
+            console.error('Błąd tworzenia wątku:', error);
+            return message.reply('❌ Nie udało się utworzyć prywatnego wątku.');
+        }
+    }
+});
+
+client.login(TOKEN);
+                    
