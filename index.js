@@ -48,6 +48,19 @@ function extractScore(text) {
     return match ? match[0].replace(':', '-') : null;
 }
 
+// Funkcja określająca kto wygrał na podstawie wyniku (np. "2-1" -> 'left', "0-2" -> 'right', "1-1" -> 'draw')
+function getWinnerFromScore(scoreStr) {
+    if (!scoreStr) return null;
+    const parts = scoreStr.split(/[-:]/);
+    if (parts.length !== 2) return null;
+    const left = parseInt(parts[0], 10);
+    const right = parseInt(parts[1], 10);
+    if (isNaN(left) || isNaN(right)) return null;
+    if (left > right) return 'left';
+    if (right > left) return 'right';
+    return 'draw';
+}
+
 // Mechanizm sprawdzający automatyczne zamykanie co 60 sekund
 setInterval(() => {
     const db = loadDB();
@@ -115,7 +128,7 @@ client.on('messageCreate', async message => {
                     name: '🎮 Komendy dla graczy', 
                     value: 
                         '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i terminy zamknięcia\n' +
-                        '`!typ [ID] [Twój typ]` - Obstawiasz wynik (np. `!typ 1 2-1` lub `!typ 1 FaZe`)\n' +
+                        '`!typ [ID] [Twój typ]` - Obstawiasz wynik (np. `!typ 1 2-1` lub `!typ 1 FURIA`)\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
                         '`!profil` (lub `!statystyki`) - Wyświetla Twój profil gracza, punkty i statystyki trafień\n' +
                         '`!historia` - Sprawdza Twoją pełną historię typów\n' +
@@ -129,7 +142,7 @@ client.on('messageCreate', async message => {
                         '`!usunmecz [ID]` - Usuwa wskazany mecz\n' +
                         '`!zamknij` / `!otworz` - Blokuje/odblokowuje typowanie globalnie\n' +
                         '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie konkretnego meczu\n' +
-                        '`!rozlicz [ID] [Wynik Zwycięzca]` - Rozlicza mecz i przyznaje punkty (np. `!rozlicz 1 2-1 FaZe`)\n' +
+                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz (np. `!rozlicz 1 2-0`)\n' +
                         '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
                         '`!resetranking` - Resetuje ranking i statystyki'
                 }
@@ -171,7 +184,7 @@ client.on('messageCreate', async message => {
 
         delete db.matches[matchId];
         saveDB(db);
-        return message.reply(`🗑️ Usunięto mecz o ID: **${matchId}**`);
+        return message.reply(`🗑️️ Usunięto mecz o ID: **${matchId}**`);
     }
 
     if (command === 'zamknij') {
@@ -239,19 +252,21 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    // NAPRAWIONE ROZLICZANIE (Obsługuje dokładny wynik 3 pkt ORAZ trafionego zwycięzcę 1 pkt)
+    // OSTATECZNIE POPRAWIONE ROZLICZANIE (Dokładny wynik = 3 pkt, Zwycięzca z wyniku lub nazwy = 1 pkt)
     if (command === 'rozlicz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
         const rawInput = args.slice(1).join(' ').toLowerCase();
         
-        if (!matchId || !rawInput) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik / Zwycięzca]` (np. `!rozlicz 1 2-1` lub `!rozlicz 1 FaZe`)');
+        if (!matchId || !rawInput) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 2-0`)');
 
         const officialScore = extractScore(rawInput);
-        // Wyciągamy nazwy drużyn z inputu admina (wszystko co nie jest wynikiem ani cyfrą)
+        if (!officialScore) return message.reply('❌ Nie znaleziono poprawnego wyniku (np. `2-0`, `2-1`) w poleceniu rozliczenia!');
+
+        const officialWinner = getWinnerFromScore(officialScore); // 'left' lub 'right'
         const officialTeams = rawInput.replace(/\d+[-:]\d+/, '').trim();
 
-        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Podany wynik/zwycięzca: **${args.slice(1).join(' ')}**\n\n`;
+        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Oficjalny wynik: **${officialScore}**\n\n`;
         let count = 0;
 
         for (const userId in db.users) {
@@ -269,30 +284,32 @@ client.on('messageCreate', async message => {
 
             const cleanPlayerPred = playerPred.toLowerCase().trim();
             const playerScores = extractScore(cleanPlayerPred);
+            const playerWinner = getWinnerFromScore(playerScores);
             const playerTeams = cleanPlayerPred.replace(/\d+[-:]\d+/, '').trim();
 
-            let awardedPoints = 0;
             let hitType = '';
 
-            // 1. Sprawdzamy czy gracz trafił DOKŁADNY WYNIK (3 pkt)
-            // Warunek: admin podał wynik I gracz podał wynik I są one identyczne
-            if (officialScore && playerScores && officialScore === playerScores) {
-                awardedPoints = 3;
+            // 1. DOKŁADNY WYNIK (3 pkt)
+            if (playerScores && playerScores === officialScore) {
                 user.points += 3;
                 user.exactHits += 1;
                 hitType = `🎯 Trafił **dokładny wynik** (${playerPred})! **+3 pkt**`;
             } 
-            // 2. Sprawdzamy czy gracz trafił ZWYCIĘZCĘ (1 pkt)
-            // Warunek: gracz wpisał nazwę drużyny, która znajduje się w nazwie oficjalnego wyniku admina LUB gracz wpisał tę samą drużynę co zwycięzca
+            // 2. TRAFIONY ZWYCIĘZCA (1 pkt)
+            // Sprawdzamy czy:
+            // - Gracz podał wynik o tym samym zwycięzcy (np. typował 2-1, wynik to 2-0 -> obie opcje dają wygraną lewej drużyny) LUB
+            // - Gracz wpisał nazwę drużyny i pasuje ona do oficjalnego zwycięzcy/nazw
             else if (
+                (playerWinner && officialWinner && playerWinner === officialWinner) ||
                 (playerTeams && officialTeams && (officialTeams.includes(playerTeams) || playerTeams.includes(officialTeams))) ||
-                (officialScore && !playerScores && officialTeams.includes(cleanPlayerPred))
+                (officialWinner === 'left' && (cleanPlayerPred.includes('furia') || cleanPlayerPred.includes('1'))) || // Opcjonalnie wsparcie dla wpisania "1" jako gospodarz
+                (officialWinner === 'right' && (cleanPlayerPred.includes('pain') || cleanPlayerPred.includes('2')))
             ) {
-                awardedPoints = 1;
                 user.points += 1;
                 user.winnerHits += 1;
-                hitType = `✅ Trafił **zwycięzцу** (${playerPred})! **+1 pkt**`;
+                hitType = `✅ Trafił **zwycięzcę** (${playerPred})! **+1 pkt**`;
             } 
+            // 3. PUDŁO (0 pkt)
             else {
                 hitType = `❌ Pomylił się (${playerPred}). 0 pkt`;
             }
@@ -416,19 +433,4 @@ client.on('messageCreate', async message => {
             const thread = await message.channel.threads.create({
                 name: `typy-${message.author.username}`,
                 autoArchiveDuration: 1440,
-                type: ChannelType.PrivateThread,
-                reason: `Prywatny kanał do typowania dla użytkownika ${message.author.tag}`
-            });
-
-            await thread.members.add(message.author.id);
-
-            return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
-        } catch (error) {
-            console.error('Błąd tworzenia wątku:', error);
-            return message.reply('❌ Nie udało się utworzyć prywatnego wątku.');
-        }
-    }
-});
-
-client.login(TOKEN);
-                    
+                type: ChannelType.PrivateTh
