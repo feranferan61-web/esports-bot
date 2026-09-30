@@ -41,7 +41,7 @@ function saveDB(data) {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
-// Mechanizm sprawdzający automatyczne zamykanie (dla całego serwera oraz dla pojedynczych meczów) co 60 sekund
+// Mechanizm sprawdzający automatyczne zamykanie co 60 sekund
 setInterval(() => {
     const db = loadDB();
     let modified = false;
@@ -109,14 +109,14 @@ client.on('messageCreate', async message => {
                 { 
                     name: '🎮 Komendy dla graczy', 
                     value: 
-                        '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i godziny zamknięcia\n' +
+                        '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i terminy zamknięcia\n' +
                         '`!typ [ID] [Twój typ]` - Obstawiasz wynik konkretnego meczu\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
                         '`!historia` - Sprawdza Twoje punkty i historię typów\n' +
                         '`!prywatnykanal` - Tworzy Twój osobisty, prywatny wątek na serwerze'
                 },
                 { 
-                    name: '🛡️ Komendy dla administratora', 
+                    name: '🛡️️ Komendy dla administratora', 
                     value: 
                         '`!dodajmecz [Nazwa]` - Automatycznie dodaje kolejny mecz (np. 1, 2, 3...)\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę meczu\n' +
@@ -124,7 +124,7 @@ client.on('messageCreate', async message => {
                         '`!zamknij` - Ręcznie blokuje typowanie globalnie\n' +
                         '`!otworz` - Ręcznie odblokowuje typowanie globalnie\n' +
                         '`!zamknijok [HH:MM]` - Ustawia globalne zamknięcie o wybranej godzinie\n' +
-                        '`!zamknijmecz [ID] [HH:MM]` - Ustawia automatyczne zamknięcie **tylko dla wybranego meczu**\n' +
+                        '`!zamknijmecz [ID] [HH:MM]` LUB `[RRRR-MM-DD HH:MM]` - Ustawia automatyczne zamknięcie dla konkretnego meczu\n' +
                         '`!rozlicz [ID] [Zwycięzca] [Wynik]` - Rozlicza mecz i przyznaje punkty\n' +
                         '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
                         '`!resetranking` - Resetuje ranking, punkty i numerację meczów do 1'
@@ -215,28 +215,37 @@ client.on('messageCreate', async message => {
         return message.reply(`⏰ Zaplanowano globalne zamknięcie typowania na: **${targetDate.toLocaleString('pl-PL')}**`);
     }
 
-    // NOWA KOMENDA: Zamykanie konkretnego meczu o danej godzinie
+    // Udoskonalona komenda: Zamykanie konkretnego meczu z obsługą daty i godziny
     if (command === 'zamknijmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
-        const timeArg = args.slice(1).join(' ');
-        if (!matchId || !timeArg) return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` (np. `!zamknijmecz 1 18:30`)');
+        const restArgs = args.slice(1);
+        if (!matchId || restArgs.length === 0) return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` lub `!zamknijmecz [ID] [RRRR-MM-DD HH:MM]`');
         if (!db.matches[matchId]) return message.reply('❌ Taki mecz nie istnieje!');
 
-        const now = new Date();
-        const [hours, minutes] = timeArg.split(':');
-        if (!hours || !minutes) return message.reply('❌ Błędny format godziny! Użyj `HH:MM`');
-        
-        const targetDate = new Date();
-        targetDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        let targetDate;
+        // Sprawdzamy czy podano datę (zawiera myślnik) czy samą godzinę
+        if (restArgs.length >= 2 && restArgs[0].includes('-')) {
+            // Format: RRRR-MM-DD oraz HH:MM
+            const dateTimeString = `${restArgs[0]}T${restArgs[1]}:00`;
+            targetDate = new Date(dateTimeString);
+        } else {
+            // Tylko godzina (np. 18:30) dla dzisiejszego dnia
+            const timeArg = restArgs.join(' ');
+            const [hours, minutes] = timeArg.split(':');
+            if (!hours || !minutes) return message.reply('❌ Błędny format! Użyj `HH:MM` lub `RRRR-MM-DD HH:MM`');
+            
+            targetDate = new Date();
+            targetDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+        }
 
-        if (isNaN(targetDate.getTime())) return message.reply('❌ Nieprawidłowy format czasu!');
+        if (isNaN(targetDate.getTime())) return message.reply('❌ Nieprawidłowy format daty lub czasu!');
 
         db.matches[matchId].lockTime = targetDate.toISOString();
         db.matches[matchId].locked = false;
         saveDB(db);
 
-        return message.reply(`⏰ Mecz **ID ${matchId}** (${db.matches[matchId].details}) zamknie się automatycznie o godzinie: **${targetDate.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })}**`);
+        return message.reply(`⏰ Mecz **ID ${matchId}** (${db.matches[matchId].details}) zamknie się automatycznie: **${targetDate.toLocaleString('pl-PL')}**`);
     }
 
     if (command === 'resetranking') {
@@ -307,8 +316,8 @@ client.on('messageCreate', async message => {
             if (m.locked) {
                 statusText = '🔒 Zamknięte';
             } else if (m.lockTime) {
-                const lockHour = new Date(m.lockTime).toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' });
-                statusText = `⏰ Zamyka się o ${lockHour}`;
+                const lockDateStr = new Date(m.lockTime).toLocaleString('pl-PL', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+                statusText = `⏰ Zamyka się: ${lockDateStr}`;
             }
             desc += `• **ID ${mId}**: ${m.details} — *${statusText}*\n`;
         }
@@ -388,4 +397,3 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-                
