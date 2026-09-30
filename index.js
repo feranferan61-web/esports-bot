@@ -41,7 +41,7 @@ function saveDB(data) {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
 }
 
-// Uniwersalna funkcja do wyciągania samego wyniku (np. "2-1", "3:0") z dowolnego tekstu
+// Funkcja pomocnicza do wyciągania samego wyniku (np. "2-1")
 function extractScore(text) {
     if (!text) return null;
     const match = text.toString().match(/\d+[-:]\d+/);
@@ -115,7 +115,7 @@ client.on('messageCreate', async message => {
                     name: '🎮 Komendy dla graczy', 
                     value: 
                         '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i terminy zamknięcia\n' +
-                        '`!typ [ID] [Twój typ]` - Obstawiasz wynik konkretnego meczu (np. `!typ 1 2-1`)\n' +
+                        '`!typ [ID] [Twój typ]` - Obstawiasz wynik (np. `!typ 1 2-1` lub `!typ 1 FaZe`)\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
                         '`!profil` (lub `!statystyki`) - Wyświetla Twój profil gracza, punkty i statystyki trafień\n' +
                         '`!historia` - Sprawdza Twoją pełną historię typów\n' +
@@ -129,8 +129,7 @@ client.on('messageCreate', async message => {
                         '`!usunmecz [ID]` - Usuwa wskazany mecz\n' +
                         '`!zamknij` / `!otworz` - Blokuje/odblokowuje typowanie globalnie\n' +
                         '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie konkretnego meczu\n' +
-                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz i przyznaje punkty\n' +
-                        '`!naprawpunkty [ID] [Wynik]` - Służy do poprawienia rozliczenia (jeśli wynik wcześniej się nie dopasował)\n' +
+                        '`!rozlicz [ID] [Wynik Zwycięzca]` - Rozlicza mecz i przyznaje punkty (np. `!rozlicz 1 2-1 FaZe`)\n' +
                         '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
                         '`!resetranking` - Resetuje ranking i statystyki'
                 }
@@ -240,18 +239,19 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    // Główna funkcja rozliczająca oparta o czystą ekstrakcję wyników (np. "2-1")
-    if (command === 'rozlicz' || command === 'naprawpunkty') {
+    // NAPRAWIONE ROZLICZANIE (Obsługuje dokładny wynik 3 pkt ORAZ trafionego zwycięzcę 1 pkt)
+    if (command === 'rozlicz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
-        const rawResultInput = args.slice(1).join(' ');
+        const rawInput = args.slice(1).join(' ').toLowerCase();
         
-        if (!matchId || !rawResultInput) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 2-1` lub `!rozlicz 1 Vitality 2-1`)');
+        if (!matchId || !rawInput) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik / Zwycięzca]` (np. `!rozlicz 1 2-1` lub `!rozlicz 1 FaZe`)');
 
-        const adminScore = extractScore(rawResultInput);
-        if (!adminScore) return message.reply('❌ Nie znaleziono poprawnego wyniku (np. `2-1`, `2:0`) w podanym tekście!');
+        const officialScore = extractScore(rawInput);
+        // Wyciągamy nazwy drużyn z inputu admina (wszystko co nie jest wynikiem ani cyfrą)
+        const officialTeams = rawInput.replace(/\d+[-:]\d+/, '').trim();
 
-        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik oficjalny: **${adminScore}**\n\n`;
+        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Podany wynik/zwycięzca: **${args.slice(1).join(' ')}**\n\n`;
         let count = 0;
 
         for (const userId in db.users) {
@@ -267,17 +267,39 @@ client.on('messageCreate', async message => {
 
             user.settledCount += 1;
 
-            const playerExtractedScore = extractScore(playerPred);
+            const cleanPlayerPred = playerPred.toLowerCase().trim();
+            const playerScores = extractScore(cleanPlayerPred);
+            const playerTeams = cleanPlayerPred.replace(/\d+[-:]\d+/, '').trim();
 
-            // Porównujemy wyłącznie wyekstraktowane wyniki numeryczne (np. "2-1" === "2-1")
-            if (playerExtractedScore && playerExtractedScore === adminScore) {
+            let awardedPoints = 0;
+            let hitType = '';
+
+            // 1. Sprawdzamy czy gracz trafił DOKŁADNY WYNIK (3 pkt)
+            // Warunek: admin podał wynik I gracz podał wynik I są one identyczne
+            if (officialScore && playerScores && officialScore === playerScores) {
+                awardedPoints = 3;
                 user.points += 3;
                 user.exactHits += 1;
-                resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${playerPred})! **+3 pkt**\n`;
-            } else {
-                resultsSummary += `❌ <@${userId}> pomylił się (${playerPred}). 0 pkt\n`;
+                hitType = `🎯 Trafił **dokładny wynik** (${playerPred})! **+3 pkt**`;
+            } 
+            // 2. Sprawdzamy czy gracz trafił ZWYCIĘZCĘ (1 pkt)
+            // Warunek: gracz wpisał nazwę drużyny, która znajduje się w nazwie oficjalnego wyniku admina LUB gracz wpisał tę samą drużynę co zwycięzca
+            else if (
+                (playerTeams && officialTeams && (officialTeams.includes(playerTeams) || playerTeams.includes(officialTeams))) ||
+                (officialScore && !playerScores && officialTeams.includes(cleanPlayerPred))
+            ) {
+                awardedPoints = 1;
+                user.points += 1;
+                user.winnerHits += 1;
+                hitType = `✅ Trafił **zwycięzцу** (${playerPred})! **+1 pkt**`;
+            } 
+            else {
+                hitType = `❌ Pomylił się (${playerPred}). 0 pkt`;
             }
+
+            resultsSummary += `<@${userId}>: ${hitType}\n`;
         }
+
         saveDB(db);
         if (count === 0) return message.reply(`⚠️ Żaden użytkownik nie obstawił meczu ID ${matchId}.`);
         return message.channel.send(resultsSummary);
