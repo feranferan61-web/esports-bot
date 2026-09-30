@@ -77,7 +77,7 @@ client.on('messageCreate', async message => {
                         '`!prywatnykanal` - Tworzy Twój osobisty, prywatny wątek na serwerze'
                 },
                 { 
-                    name: '🛡️ Komendy dla administratora', 
+                    name: '🛡️️ Komendy dla administratora', 
                     value: 
                         '`!dodajmecz [ID] [Nazwa]` - Dodaje nowy mecz\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę meczu\n' +
@@ -219,7 +219,7 @@ client.on('messageCreate', async message => {
             }
         }
         saveDB(db);
-        if (count === 0) return message.reply(`⚠️️ Żaden użytkownik nie obstawił meczu ID ${matchId}.`);
+        if (count === 0) return message.reply(`⚠️ Żaden użytkownik nie obstawił meczu ID ${matchId}.`);
         return message.channel.send(resultsSummary);
     }
 
@@ -282,29 +282,26 @@ client.on('messageCreate', async message => {
 
     if (command === 'prywatnykanal') {
         try {
-            // Sprawdzamy czy kanał, na którym wpisano komendę, to kanał tekstowy (nie inny wątek)
             if (!message.channel.isTextBased() || message.channel.isDMBased()) {
                 return message.reply('❌ Tej komendy można użyć tylko na zwykłym kanale tekstowym serwera.');
             }
 
-            // Tworzymy prywatny wątek
             const thread = await message.channel.threads.create({
                 name: `typy-${message.author.username}`,
-                autoArchiveDuration: 1440, // Archiwizacja po 24h nieaktywności
+                autoArchiveDuration: 1440,
                 type: ChannelType.PrivateThread,
                 reason: `Prywatny kanał do typowania dla użytkownika ${message.author.tag}`
             });
 
-            // Dodajemy użytkownika do wątku
             await thread.members.add(message.author.id);
 
             return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
         } catch (error) {
             console.error('Błąd tworzenia wątku:', error);
-            return message.reply('❌ Nie udało się utworzyć prywatnego wątku. Upewnij się, że bot ma odpowiednie uprawnienia na serwerze (Zarządzanie wątkami / Tworzenie prywatnych wątków).');
+            return message.reply('❌ Nie udało się utworzyć prywatnego wątku. Upewnij się, że bot ma uprawnienie do tworzenia prywatnych wątków.');
         }
     }
 });
 
 client.login(TOKEN);
-            
+        
