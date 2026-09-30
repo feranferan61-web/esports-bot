@@ -112,11 +112,12 @@ client.on('messageCreate', async message => {
                         '`!mecze` - Wyświetla listę aktywnych meczów, ich ID i terminy zamknięcia\n' +
                         '`!typ [ID] [Twój typ]` - Obstawiasz wynik konkretnego meczu\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
-                        '`!historia` - Sprawdza Twoje punkty i historię typów\n' +
+                        '`!profil` (lub `!statystyki`) - Wyświetla Twój profil gracza, punkty i dokładne statystyki trafień\n' +
+                        '`!historia` - Sprawdza Twoją pełną historię typów\n' +
                         '`!prywatnykanal` - Tworzy Twój osobisty, prywatny wątek na serwerze'
                 },
                 { 
-                    name: '🛡️️ Komendy dla administratora', 
+                    name: '🛡️ Komendy dla administratora', 
                     value: 
                         '`!dodajmecz [Nazwa]` - Automatycznie dodaje kolejny mecz (np. 1, 2, 3...)\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę meczu\n' +
@@ -125,7 +126,7 @@ client.on('messageCreate', async message => {
                         '`!otworz` - Ręcznie odblokowuje typowanie globalnie\n' +
                         '`!zamknijok [HH:MM]` - Ustawia globalne zamknięcie o wybranej godzinie\n' +
                         '`!zamknijmecz [ID] [HH:MM]` LUB `[RRRR-MM-DD HH:MM]` - Ustawia automatyczne zamknięcie dla konkretnego meczu\n' +
-                        '`!rozlicz [ID] [Zwycięzca] [Wynik]` - Rozlicza mecz i przyznaje punkty\n' +
+                        '`!rozlicz [ID] [Zwycięzca] [Wynik]` - Rozlicza mecz i przyznaje punkty oraz statystyki\n' +
                         '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
                         '`!resetranking` - Resetuje ranking, punkty i numerację meczów do 1'
                 }
@@ -215,7 +216,6 @@ client.on('messageCreate', async message => {
         return message.reply(`⏰ Zaplanowano globalne zamknięcie typowania na: **${targetDate.toLocaleString('pl-PL')}**`);
     }
 
-    // Udoskonalona komenda: Zamykanie konkretnego meczu z obsługą daty i godziny
     if (command === 'zamknijmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
@@ -224,13 +224,10 @@ client.on('messageCreate', async message => {
         if (!db.matches[matchId]) return message.reply('❌ Taki mecz nie istnieje!');
 
         let targetDate;
-        // Sprawdzamy czy podano datę (zawiera myślnik) czy samą godzinę
         if (restArgs.length >= 2 && restArgs[0].includes('-')) {
-            // Format: RRRR-MM-DD oraz HH:MM
             const dateTimeString = `${restArgs[0]}T${restArgs[1]}:00`;
             targetDate = new Date(dateTimeString);
         } else {
-            // Tylko godzina (np. 18:30) dla dzisiejszego dnia
             const timeArg = restArgs.join(' ');
             const [hours, minutes] = timeArg.split(':');
             if (!hours || !minutes) return message.reply('❌ Błędny format! Użyj `HH:MM` lub `RRRR-MM-DD HH:MM`');
@@ -285,16 +282,26 @@ client.on('messageCreate', async message => {
         let count = 0;
 
         for (const userId in db.users) {
-            const p = db.users[userId].predictions[matchId];
+            const user = db.users[userId];
+            const p = user.predictions[matchId];
             if (!p) continue;
             count++;
-            if (!db.users[userId].points) db.users[userId].points = 0;
+            
+            // Inicjalizacja pól statystyk, jeśli ich nie ma
+            if (user.points === undefined) user.points = 0;
+            if (user.exactHits === undefined) user.exactHits = 0;
+            if (user.winnerHits === undefined) user.winnerHits = 0;
+            if (user.settledCount === undefined) user.settledCount = 0;
+
+            user.settledCount += 1; // Zwiększamy liczbę rozliczonych typów gracza
 
             if (p.toLowerCase() === `${winner} ${exactScore}`.toLowerCase()) {
-                db.users[userId].points += 3;
+                user.points += 3;
+                user.exactHits += 1;
                 resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${p})! **+3 pkt**\n`;
             } else if (p.toLowerCase().includes(winner.toLowerCase())) {
-                db.users[userId].points += 1;
+                user.points += 1;
+                user.winnerHits += 1;
                 resultsSummary += `✅ <@${userId}> trafił zwycięzcę (${p})! **+1 pkt**\n`;
             } else {
                 resultsSummary += `❌ <@${userId}> pomylił się (${p}). 0 pkt\n`;
@@ -337,10 +344,50 @@ client.on('messageCreate', async message => {
         if (match.locked) return message.reply(`❌ Typowanie dla meczu **ID ${matchId}** zostało już zamknięte!`);
 
         const userId = message.author.id;
-        if (!db.users[userId]) db.users[userId] = { predictions: {}, points: 0 };
+        if (!db.users[userId]) db.users[userId] = { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
         db.users[userId].predictions[matchId] = pred;
         saveDB(db);
         return message.reply(`✅ <@${userId}>, zapisano typ: **${pred}** dla meczu ID **${matchId}**.`);
+    }
+
+    if (command === 'profil' || command === 'statystyki') {
+        const userId = message.author.id;
+        const userData = db.users[userId];
+
+        if (!userData || Object.keys(userData.predictions).length === 0) {
+            return message.reply('📌 Nie masz jeszcze żadnych typów ani statystyk. Obstaw swój pierwszy mecz komendą `!typ`!');
+        }
+
+        const points = userData.points || 0;
+        const exactHits = userData.exactHits || 0;
+        const winnerHits = userData.winnerHits || 0;
+        const settledCount = userData.settledCount || 0;
+        const totalPreds = Object.keys(userData.predictions).length;
+
+        // Obliczanie skuteczności procentowej na podstawie rozliczonych meczów
+        let winRate = 0;
+        if (settledCount > 0) {
+            winRate = Math.round(((exactHits + winnerHits) / settledCount) * 100);
+        }
+
+        // Ustalanie pozycji w rankingu
+        const sortedUsers = Object.entries(db.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0));
+        const userRankIndex = sortedUsers.findIndex(([id]) => id === userId);
+        const rankText = userRankIndex !== -1 ? `#${userRankIndex + 1}` : 'Poza rankingiem';
+
+        const embed = new EmbedBuilder()
+            .setTitle(`📊 Profil gracza: ${message.author.username}`)
+            .setColor(0x00FFCC)
+            .addFields(
+                { name: '🏆 Punkty', value: `**${points} pkt** (Miejsce: ${rankText})`, inline: true },
+                { name: '🎯 Złote strzały (3 pkt)', value: `**${exactHits}**`, inline: true },
+                { name: '✅ Trafieni zwycięzcy (1 pkt)', value: `**${winnerHits}**`, inline: true },
+                { name: '📈 Skuteczność', value: `**${winRate}%** (z ${settledCount} rozliczonych)`, inline: true },
+                { name: '📌 Liczba aktywnych typów', value: `**${totalPreds}**`, inline: true }
+            )
+            .setThumbnail(message.author.displayAvatarURL());
+
+        return message.reply({ embeds: [embed] });
     }
 
     if (command === 'mojetypy') {
@@ -388,12 +435,4 @@ client.on('messageCreate', async message => {
 
             await thread.members.add(message.author.id);
 
-            return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
-        } catch (error) {
-            console.error('Błąd tworzenia wątku:', error);
-            return message.reply('❌ Nie udało się utworzyć prywatnego wątku.');
-        }
-    }
-});
-
-client.login(TOKEN);
+            return message.repl
