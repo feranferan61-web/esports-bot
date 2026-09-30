@@ -73,8 +73,7 @@ client.on('messageCreate', async message => {
                         '`!mecze` - Wyświetla listę aktywnych meczów i ich ID\n' +
                         '`!typ [ID] [Twój typ]` - Obstawiasz wynik meczu (możesz nadpisać)\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
-                        '`!historia` - Sprawdza Twoje punkty i całą historię typów\n' +
-                        '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy'
+                        '`!historia` - Sprawdza Twoje punkty i całą historię typów'
                 },
                 { 
                     name: '🛡️ Komendy dla administratora', 
@@ -86,6 +85,7 @@ client.on('messageCreate', async message => {
                         '`!otworz` - Ręcznie odblokowuje typowanie\n' +
                         '`!zamknijok [HH:MM]` - Ustawia automatyczne zamknięcie o wybranej godzinie\n' +
                         '`!rozlicz [ID] [Zwycięzca] [Wynik]` - Rozlicza mecz i przyznaje punkty\n' +
+                        '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy (Tylko Admin)\n' +
                         '`!resetranking` - Resetuje ranking i punkty wszystkich graczy'
                 }
             );
@@ -176,6 +176,21 @@ client.on('messageCreate', async message => {
         return message.reply('🔄 Ranking oraz historia typów wszystkich graczy zostały zresetowane.');
     }
 
+    if (command === 'ranking' || command === 'punkty') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+
+        const sorted = Object.entries(db.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
+        if (sorted.length === 0) return message.reply('🏆 Tabela rankingowa jest pusta.');
+        let desc = '';
+        sorted.forEach(([id, data], i) => {
+            let m = `${i+1}.`;
+            if (i === 0) m = '🥇'; if (i === 1) m = '🥈'; if (i === 2) m = '🥉';
+            desc += `${m} <@${id}> — **${data.points || 0} pkt**\n`;
+        });
+        const embed = new EmbedBuilder().setTitle('🏆 Tabela Wyników').setDescription(desc).setColor(0xFFD700);
+        return message.reply({ embeds: [embed] });
+    }
+
     if (command === 'rozlicz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
@@ -263,20 +278,7 @@ client.on('messageCreate', async message => {
             
         return message.reply({ embeds: [embed], flags: 64 });
     }
-
-    if (command === 'ranking' || command === 'punkty') {
-        const sorted = Object.entries(db.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
-        if (sorted.length === 0) return message.reply('🏆 Tabela rankingowa jest pusta.');
-        let desc = '';
-        sorted.forEach(([id, data], i) => {
-            let m = `${i+1}.`;
-            if (i === 0) m = '🥇'; if (i === 1) m = '🥈'; if (i === 2) m = '🥉';
-            desc += `${m} <@${id}> — **${data.points || 0} pkt**\n`;
-        });
-        const embed = new EmbedBuilder().setTitle('🏆 Tabela Wyników').setDescription(desc).setColor(0xFFD700);
-        return message.reply({ embeds: [embed] });
-    }
 });
 
 client.login(TOKEN);
-            
+        
