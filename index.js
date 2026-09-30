@@ -274,7 +274,15 @@ client.on('messageCreate', async message => {
         const matchId = args[0];
         const matchResultFull = args.slice(1).join(' ').toLowerCase(); 
         
-        if (!matchId || !matchResultFull) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 FaZe 2-1 MOUZ` lub `!rozlicz 1 2-1`)');
+        if (!matchId || !matchResultFull) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 Vitality 2-1` lub `!rozlicz 1 2-1`)');
+
+        // Funkcja pomocnicza wyciągająca sam wynik (np. "2-1", "3-2") z dowolnego tekstu
+        const extractScore = (text) => {
+            const match = text.match(/\d+[-:]\d+/);
+            return match ? match[0] : null;
+        };
+
+        const adminScore = extractScore(matchResultFull);
 
         let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik: **${args.slice(1).join(' ')}**\n\n`;
         let count = 0;
@@ -293,10 +301,21 @@ client.on('messageCreate', async message => {
             user.settledCount += 1;
 
             const cleanP = p.toLowerCase().trim();
+            const userScore = extractScore(cleanP);
 
-            // Dopasowanie: jeśli wpisany wynik admina zawiera typ gracza lub na odwrót
-            if (cleanP === matchResultFull || matchResultFull.includes(cleanP) || cleanP.includes(matchResultFull)) {
-                if (cleanP.includes('-') || cleanP.includes(':') || matchResultFull.includes('-') || matchResultFull.includes(':')) {
+            // Warunek dopasowania:
+            // 1. Pełne teksty są identyczne LUB
+            // 2. Jeden zawiera drugi LUB
+            // 3. Wyniki numeryczne (np. "2-1") są identyczne, nawet jeśli admin podał nazwę drużyny a gracz sam wynik
+            const isExactMatch = 
+                cleanP === matchResultFull || 
+                matchResultFull.includes(cleanP) || 
+                cleanP.includes(matchResultFull) ||
+                (adminScore && userScore && adminScore === userScore);
+
+            if (isExactMatch) {
+                // Jeśli zawiera wynik punktowy (np. zawiera "-" lub ":") -> 3 punkty za dokładny wynik
+                if (cleanP.includes('-') || cleanP.includes(':') || matchResultFull.includes('-') || matchResultFull.includes(':') || userScore || adminScore) {
                     user.points += 3;
                     user.exactHits += 1;
                     resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${p})! **+3 pkt**\n`;
@@ -414,22 +433,4 @@ client.on('messageCreate', async message => {
             .setColor(0x9B59B6);
             
         return message.reply({ embeds: [embed], flags: 64 });
-    }
-
-    if (command === 'prywatnykanal') {
-        try {
-            if (!message.channel.isTextBased() || message.channel.isDMBased()) {
-                return message.reply('❌ Tej komendy można użyć tylko na zwykłym kanale tekstowym serwera.');
-            }
-
-            const thread = await message.channel.threads.create({
-                name: `typy-${message.author.username}`,
-                autoArchiveDuration: 1440,
-                type: ChannelType.PrivateThread,
-                reason: `Prywatny kanał do typowania dla użytkownika ${message.author.tag}`
-            });
-
-            await thread.members.add(message.author.id);
-
-            return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
-        } catch (error) 
+  
