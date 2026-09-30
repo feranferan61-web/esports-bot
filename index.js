@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
 const fs = require('fs');
 
 const client = new Client({
@@ -73,7 +73,8 @@ client.on('messageCreate', async message => {
                         '`!mecze` - Wyświetla listę aktywnych meczów i ich ID\n' +
                         '`!typ [ID] [Twój typ]` - Obstawiasz wynik meczu (możesz nadpisać)\n' +
                         '`!mojetypy` - Pokazuje Twoje aktualne typy\n' +
-                        '`!historia` - Sprawdza Twoje punkty i całą historię typów'
+                        '`!historia` - Sprawdza Twoje punkty i całą historię typów\n' +
+                        '`!prywatnykanal` - Tworzy Twój osobisty, prywatny wątek na serwerze'
                 },
                 { 
                     name: '🛡️ Komendy dla administratora', 
@@ -218,7 +219,7 @@ client.on('messageCreate', async message => {
             }
         }
         saveDB(db);
-        if (count === 0) return message.reply(`⚠️ Żaden użytkownik nie obstawił meczu ID ${matchId}.`);
+        if (count === 0) return message.reply(`⚠️️ Żaden użytkownik nie obstawił meczu ID ${matchId}.`);
         return message.channel.send(resultsSummary);
     }
 
@@ -278,7 +279,32 @@ client.on('messageCreate', async message => {
             
         return message.reply({ embeds: [embed], flags: 64 });
     }
+
+    if (command === 'prywatnykanal') {
+        try {
+            // Sprawdzamy czy kanał, na którym wpisano komendę, to kanał tekstowy (nie inny wątek)
+            if (!message.channel.isTextBased() || message.channel.isDMBased()) {
+                return message.reply('❌ Tej komendy można użyć tylko na zwykłym kanale tekstowym serwera.');
+            }
+
+            // Tworzymy prywatny wątek
+            const thread = await message.channel.threads.create({
+                name: `typy-${message.author.username}`,
+                autoArchiveDuration: 1440, // Archiwizacja po 24h nieaktywności
+                type: ChannelType.PrivateThread,
+                reason: `Prywatny kanał do typowania dla użytkownika ${message.author.tag}`
+            });
+
+            // Dodajemy użytkownika do wątku
+            await thread.members.add(message.author.id);
+
+            return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
+        } catch (error) {
+            console.error('Błąd tworzenia wątku:', error);
+            return message.reply('❌ Nie udało się utworzyć prywatnego wątku. Upewnij się, że bot ma odpowiednie uprawnienia na serwerze (Zarządzanie wątkami / Tworzenie prywatnych wątków).');
+        }
+    }
 });
 
 client.login(TOKEN);
-        
+            
