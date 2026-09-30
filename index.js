@@ -1,5 +1,18 @@
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
 const fs = require('fs');
+const http = require('http'); // Wbudowany moduł Node.js do tworzenia serwera WWW
+
+// --- MINI SERWER HTTP DLA UPTIMEROBOTA ---
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot Discord dziala 24/7!\n');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Mini serwer HTTP dziala na porcie ${PORT}`);
+});
+// ----------------------------------------
 
 const client = new Client({
     intents: [
@@ -35,10 +48,9 @@ setInterval(() => {
         const targetTime = new Date(db.settings.lockTime);
         if (now >= targetTime) {
             db.settings.locked = true;
-            db.settings.lockTime = null; // Resetujemy czas po zamknięciu
+            db.settings.lockTime = null;
             saveDB(db);
             
-            // Wysyłamy informację na pierwszy dostępny kanał tekstowy, gdzie bot ma uprawnienia
             client.guilds.cache.forEach(guild => {
                 const channel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me).has(PermissionsBitField.Flags.SendMessages));
                 if (channel) {
@@ -61,7 +73,6 @@ client.on('messageCreate', async message => {
     const db = loadDB();
 
     // --- KOMENDA POMOCY ---
-
     if (command === 'komendy' || command === 'pomoc') {
         const embed = new EmbedBuilder()
             .setTitle('📖 Lista komend bota e-sportowego')
@@ -77,7 +88,7 @@ client.on('messageCreate', async message => {
                         '`!prywatnykanal` - Tworzy Twój osobisty, prywatny wątek na serwerze'
                 },
                 { 
-                    name: '🛡️️ Komendy dla administratora', 
+                    name: '🛡️ Komendy dla administratora', 
                     value: 
                         '`!dodajmecz [ID] [Nazwa]` - Dodaje nowy mecz\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę meczu\n' +
@@ -94,7 +105,6 @@ client.on('messageCreate', async message => {
     }
 
     // --- KOMENDY ADMINISTRATORA ---
-
     if (command === 'dodajmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
@@ -131,7 +141,7 @@ client.on('messageCreate', async message => {
     if (command === 'zamknij') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.settings.locked = true;
-        db.settings.lockTime = null; // Anulujemy też ewentualny automatyczny timer
+        db.settings.lockTime = null;
         saveDB(db);
         return message.reply('🔒 Typowanie zostało **zamknięte**.');
     }
@@ -147,13 +157,12 @@ client.on('messageCreate', async message => {
     if (command === 'zamknijok') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const timeArg = args.join(' ');
-        if (!timeArg) return message.reply('❌ Użycie: `!zamknijok [HH:MM]` (np. `!zamknijok 19:30`) lub z datą `!zamknijok 2026-09-28 19:30`');
+        if (!timeArg) return message.reply('❌ Użycie: `!zamknijok [HH:MM]`');
 
         let targetDate;
         if (timeArg.includes('-')) {
             targetDate = new Date(timeArg);
         } else {
-            // Jeśli podano samą godzinę (np. 19:30), ustawiamy na dzisiejszy dzień
             const now = new Date();
             const [hours, minutes] = timeArg.split(':');
             if (!hours || !minutes) return message.reply('❌ Błędny format godziny! Użyj `HH:MM`');
@@ -164,7 +173,7 @@ client.on('messageCreate', async message => {
         if (isNaN(targetDate.getTime())) return message.reply('❌ Nieprawidłowy format czasu!');
 
         db.settings.lockTime = targetDate.toISOString();
-        db.settings.locked = false; // Otwieramy na czas oczekiwania
+        db.settings.locked = false;
         saveDB(db);
         
         return message.reply(`⏰ Zaplanowano automatyczne zamknięcie typowania na: **${targetDate.toLocaleString('pl-PL')}**`);
@@ -224,7 +233,6 @@ client.on('messageCreate', async message => {
     }
 
     // --- KOMENDY DLA GRACZY ---
-
     if (command === 'mecze') {
         const matchKeys = Object.keys(db.matches);
         if (matchKeys.length === 0) return message.reply('📌 Brak aktywnych meczów.');
@@ -298,10 +306,10 @@ client.on('messageCreate', async message => {
             return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
         } catch (error) {
             console.error('Błąd tworzenia wątku:', error);
-            return message.reply('❌ Nie udało się utworzyć prywatnego wątku. Upewnij się, że bot ma uprawnienie do tworzenia prywatnych wątków.');
+            return message.reply('❌ Nie udało się utworzyć prywatnego wątku.');
         }
     }
 });
 
 client.login(TOKEN);
-        
+                    
