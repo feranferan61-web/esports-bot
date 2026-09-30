@@ -124,7 +124,7 @@ client.on('messageCreate', async message => {
                         '`!otworz` - Ręcznie odblokowuje typowanie globalnie\n' +
                         '`!zamknijok [HH:MM]` - Ustawia globalne zamknięcie o wybranej godzinie\n' +
                         '`!zamknijmecz [ID] [HH:MM]` LUB `[RRRR-MM-DD HH:MM]` - Ustawia automatyczne zamknięcie dla konkretnego meczu\n' +
-                        '`!rozlicz [ID] [Zwycięzca] [Wynik]` - Rozlicza mecz i przyznaje punkty oraz statystyki\n' +
+                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz i przyznaje punkty oraz statystyki\n' +
                         '`!ranking` (lub `!punkty`) - Wyświetla tabelę najlepszych graczy\n' +
                         '`!resetranking` - Resetuje ranking, punkty i numerację meczów do 1'
                 }
@@ -272,14 +272,12 @@ client.on('messageCreate', async message => {
     if (command === 'rozlicz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
-        const winner = args[1];
-        const exactScore = args.slice(2).join(' ');
-        if (!matchId || !winner || !exactScore) return message.reply('❌ Użycie: `!rozlicz [ID] [Zwycięzca] [Dokładny Wynik]`');
+        const matchResultFull = args.slice(1).join(' ').toLowerCase(); 
+        
+        if (!matchId || !matchResultFull) return message.reply('❌ Użycie: `!rozlicz [ID] [Wynik]` (np. `!rozlicz 1 FaZe 2-1 MOUZ` lub `!rozlicz 1 2-1`)');
 
-        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik: **${winner} ${exactScore}**\n\n`;
+        let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik: **${args.slice(1).join(' ')}**\n\n`;
         let count = 0;
-
-        const fullExactResult = `${winner} ${exactScore}`.toLowerCase();
 
         for (const userId in db.users) {
             const user = db.users[userId];
@@ -296,14 +294,17 @@ client.on('messageCreate', async message => {
 
             const cleanP = p.toLowerCase().trim();
 
-            if (cleanP === fullExactResult || cleanP === exactScore.toLowerCase()) {
-                user.points += 3;
-                user.exactHits += 1;
-                resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${p})! **+3 pkt**\n`;
-            } else if (cleanP.includes(winner.toLowerCase()) || cleanP === winner.toLowerCase()) {
-                user.points += 1;
-                user.winnerHits += 1;
-                resultsSummary += `✅ <@${userId}> trafił zwycięzcę (${p})! **+1 pkt**\n`;
+            // Dopasowanie: jeśli wpisany wynik admina zawiera typ gracza lub na odwrót
+            if (cleanP === matchResultFull || matchResultFull.includes(cleanP) || cleanP.includes(matchResultFull)) {
+                if (cleanP.includes('-') || cleanP.includes(':') || matchResultFull.includes('-') || matchResultFull.includes(':')) {
+                    user.points += 3;
+                    user.exactHits += 1;
+                    resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${p})! **+3 pkt**\n`;
+                } else {
+                    user.points += 1;
+                    user.winnerHits += 1;
+                    resultsSummary += `✅ <@${userId}> trafił zwycięzcę (${p})! **+1 pkt**\n`;
+                }
             } else {
                 resultsSummary += `❌ <@${userId}> pomylił się (${p}). 0 pkt\n`;
             }
@@ -431,11 +432,4 @@ client.on('messageCreate', async message => {
             await thread.members.add(message.author.id);
 
             return message.reply(`✅ Utworzyłem dla Ciebie prywatny wątek: <#${thread.id}>. Tylko Ty i administracja macie do niego wgląd!`);
-        } catch (error) {
-            console.error('Błąd tworzenia wątku:', error);
-            return message.reply('❌ Nie udało się utworzyć prywatnego wątku.');
-        }
-    }
-});
-
-cl
+        } catch (error) 
