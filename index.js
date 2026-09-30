@@ -98,7 +98,7 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
     const db = loadDB();
 
-    // --- KOMENDA POMOCY (ZAWIERA TERAZ !profil) ---
+    // --- KOMENDA POMOCY ---
     if (command === 'komendy' || command === 'pomoc') {
         const embed = new EmbedBuilder()
             .setTitle('📖 Lista komend bota e-sportowego')
@@ -279,6 +279,8 @@ client.on('messageCreate', async message => {
         let resultsSummary = `⚔️ **Rozliczenie meczu ID: ${matchId}**\n🏆 Wynik: **${winner} ${exactScore}**\n\n`;
         let count = 0;
 
+        const fullExactResult = `${winner} ${exactScore}`.toLowerCase();
+
         for (const userId in db.users) {
             const user = db.users[userId];
             const p = user.predictions[matchId];
@@ -292,11 +294,13 @@ client.on('messageCreate', async message => {
 
             user.settledCount += 1;
 
-            if (p.toLowerCase() === `${winner} ${exactScore}`.toLowerCase()) {
+            const cleanP = p.toLowerCase().trim();
+
+            if (cleanP === fullExactResult || cleanP === exactScore.toLowerCase()) {
                 user.points += 3;
                 user.exactHits += 1;
                 resultsSummary += `🎯 <@${userId}> trafił **dokładny wynik** (${p})! **+3 pkt**\n`;
-            } else if (p.toLowerCase().includes(winner.toLowerCase())) {
+            } else if (cleanP.includes(winner.toLowerCase()) || cleanP === winner.toLowerCase()) {
                 user.points += 1;
                 user.winnerHits += 1;
                 resultsSummary += `✅ <@${userId}> trafił zwycięzcę (${p})! **+1 pkt**\n`;
@@ -434,5 +438,4 @@ client.on('messageCreate', async message => {
     }
 });
 
-client.login(TOKEN);
-        
+cl
