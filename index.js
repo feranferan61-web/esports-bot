@@ -22,7 +22,6 @@ async function initDB() {
             )
         `);
         
-        // Sprawdzamy, czy struktura danych już istnieje w tabeli, jeśli nie - tworzymy domyślną
         const res = await db.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
         if (res.rows.length === 0) {
             const initialData = { 
@@ -41,7 +40,7 @@ async function initDB() {
 
 initDB();
 
-// Funkcje pomocnicze do wczytywania i zapisu danych (zamiennik fs dla bazy SQL)
+// Funkcje pomocnicze do wczytywania i zapisu danych
 async function loadDB() {
     try {
         const res = await db.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
@@ -259,7 +258,7 @@ client.on('messageCreate', async message => {
         }
 
         const [hours, minutes] = timeStr.split(':').map(Number);
-        if (isNaN(hours) || isNaN(minutes)) {
+        if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
             return message.reply('❌ Błędny format godziny! Użyj formatu 24h, np. `!zamknijmecz 1 18:00`.');
         }
 
@@ -267,21 +266,17 @@ client.on('messageCreate', async message => {
         const targetTime = new Date();
         targetTime.setHours(hours, minutes, 0, 0);
 
+        // Jeśli podana godzina już minęła dzisiaj, ustawiamy zamknięcie na jutro
         if (targetTime <= now) {
-            if (now.getTime() - targetTime.getTime() <= 10 * 60 * 1000) {
-                db.matches[matchId].locked = true;
-                db.matches[matchId].lockTime = null;
-                await saveDB(db);
-                return message.reply(`🔒 Mecz ID **${matchId}** został natychmiast zamknięty (czas ${timeStr} minął).`);
-            } else {
-                targetTime.setDate(targetTime.getDate() + 1);
-            }
+            targetTime.setDate(targetTime.getDate() + 1);
         }
 
         db.matches[matchId].lockTime = targetTime.toISOString();
         db.matches[matchId].locked = false;
         await saveDB(db);
-        return message.reply(`⏳ Mecz ID **${matchId}** automatycznie zamknie się o godzinie **${timeStr}**.`);
+
+        const dayInfo = targetTime.getDate() === now.getDate() ? 'dzisiaj' : 'jutro';
+        return message.reply(`⏳ Mecz ID **${matchId}** zamknie się automatycznie **${dayInfo} o godzinie ${timeStr}**.`);
     }
 
     if (command === 'resetranking') {
@@ -479,4 +474,10 @@ client.on('messageCreate', async message => {
         let winRate = settledCount > 0 ? Math.round(((exactHits + winnerHits) / settledCount) * 100) : 0;
         const sortedUsers = Object.entries(db.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0));
         const userRankIndex = sortedUsers.findIndex(([id]) => id === userId);
-        const rankText = u
+        const rankText = userRankIndex !== -1 ? `#${userRankIndex + 1}` : 'Poza rankingiem';
+
+        const embed = new EmbedBuilder()
+            .setTitle(`📊 Profil: ${message.author.username}`)
+            .setColor(0x00FFCC)
+            .addFields(
+                { name: '🏆 Pun
