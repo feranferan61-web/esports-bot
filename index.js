@@ -26,7 +26,7 @@ async function initDB() {
             const initialData = { 
                 matches: {}, 
                 users: {}, 
-                settings: { locked: false, lockTime: null }, 
+                settings: { locked: false }, 
                 nextMatchId: 1 
             };
             await db.query('INSERT INTO kv_store (key, value) VALUES ($1, $2)', ['main_db', JSON.stringify(initialData)]);
@@ -44,14 +44,14 @@ async function loadDB() {
         const res = await db.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
         if (res.rows.length > 0) {
             let data = res.rows[0].value;
-            if (!data.settings) data.settings = { locked: false, lockTime: null };
+            if (!data.settings) data.settings = { locked: false };
             if (!data.nextMatchId) data.nextMatchId = 1;
             return data;
         }
     } catch (err) {
         console.error('Błąd ładowania bazy:', err);
     }
-    return { matches: {}, users: {}, settings: { locked: false, lockTime: null }, nextMatchId: 1 };
+    return { matches: {}, users: {}, settings: { locked: false }, nextMatchId: 1 };
 }
 
 async function saveDB(data) {
@@ -106,36 +106,6 @@ function getWinnerFromScore(scoreStr) {
     return 'draw';
 }
 
-// --- KLUCZOWA POPRAWKA: Pętla z natychmiastowym zapisem do bazy po zamknięciu meczu ---
-setInterval(async () => {
-    const database = await loadDB();
-    let modified = false;
-    const now = Date.now();
-
-    for (const mId in database.matches) {
-        const match = database.matches[mId];
-        if (!match.locked && match.lockTime) {
-            const targetTime = new Date(match.lockTime).getTime();
-            if (now >= targetTime) {
-                match.locked = true;
-                match.lockTime = null;
-                modified = true;
-
-                client.guilds.cache.forEach(guild => {
-                    const channel = guild.channels.cache.find(ch => ch.isTextBased() && ch.permissionsFor(guild.members.me).has(PermissionsBitField.Flags.SendMessages));
-                    if (channel) {
-                        channel.send(`🔒 **Automatyczne zamknięcie:** Czas na typowanie meczu **ID ${mId}** (${match.details}) minął! Mecz został zablokowany.`);
-                    }
-                });
-            }
-        }
-    }
-
-    if (modified) {
-        await saveDB(database);
-    }
-}, 5000);
-
 client.once('ready', () => {
     console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy.`);
 });
@@ -169,8 +139,9 @@ client.on('messageCreate', async message => {
                         '`!dodajmecz [Nazwa]` - Dodaje mecz\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę\n' +
                         '`!usunmecz [ID]` - Usuwa mecz\n' +
+                        '`!zablokujmecz [ID]` - Natychmiast blokuje typowanie meczu\n' +
+                        '`!odblokujmecz [ID]` - Odblokowuje typowanie meczu\n' +
                         '`!zamknij` / `!otwórz` - Blokada globalna\n' +
-                        '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie meczu (np. `!zamknijmecz 1 18:00`)\n' +
                         '`!rozlicz [ID] [Wynik]` - Automatyczne rozliczenie meczu\n' +
                         '`!dodajpkt [@Gracz] [Punkty]` - Ręczne dodanie punktów\n' +
                         '`!usunpkt [@Gracz] [Punkty]` - Ręczne usunięcie punktów\n' +
@@ -190,7 +161,7 @@ client.on('messageCreate', async message => {
         const matchId = db.nextMatchId.toString();
         db.nextMatchId++;
 
-        db.matches[matchId] = { details: matchDetails, locked: false, lockTime: null };
+        db.matches[matchId] = { details: matchDetails, locked: false };
         await saveDB(db);
         return message.reply(`✅ Dodano mecz z automatycznym ID: **${matchId}** (${matchDetails}).`);
     }
@@ -216,6 +187,32 @@ client.on('messageCreate', async message => {
         return message.reply(`🗑️ Usunięto mecz o ID: **${matchId}**`);
     }
 
+    // --- ADMIN: BLOKADA KONKRETNEGO MECZU ---
+    if (command === 'zablokujmecz') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        const matchId = args[0];
+        if (!matchId || !db.matches[matchId]) {
+            return message.reply('❌ Użycie: `!zablokujmecz [ID]` (np. `!zablokujmecz 3`)');
+        }
+
+        db.matches[matchId].locked = true;
+        await saveDB(db);
+        return message.reply(`🔒 Mecz ID **${matchId}** został pomyślnie zablokowany. Gracze nie mogą już składać typów.`);
+    }
+
+    // --- ADMIN: ODBLOKOWANIE KONKRETNEGO MECZU ---
+    if (command === 'odblokujmecz') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        const matchId = args[0];
+        if (!matchId || !db.matches[matchId]) {
+            return message.reply('❌ Użycie: `!odblokujmecz [ID]` (np. `!odblokujmecz 3`)');
+        }
+
+        db.matches[matchId].locked = false;
+        await saveDB(db);
+        return message.reply(`🔓 Mecz ID **${matchId}** został odblokowany. Gracze mogą ponownie typować.`);
+    }
+
     if (command === 'zamknij') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.settings.locked = true;
@@ -230,45 +227,12 @@ client.on('messageCreate', async message => {
         return message.reply('🔓 Odblokowano typowanie globalnie.');
     }
 
-    // --- ADMIN: ZAMKNIJ MECZ ---
-    if (command === 'zamknijmecz') {
-        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
-        
-        const matchId = args[0];
-        const timeStr = args[1];
-
-        if (!matchId || !timeStr || !db.matches[matchId]) {
-            return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` (np. `!zamknijmecz 1 18:00`)');
-        }
-
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-            return message.reply('❌ Błędny format godziny! Użyj formatu 24h, np. `!zamknijmecz 1 18:00`.');
-        }
-
-        const now = new Date();
-        const targetTime = new Date();
-        targetTime.setHours(hours, minutes, 0, 0);
-
-        if (targetTime.getTime() <= now.getTime()) {
-            targetTime.setDate(targetTime.getDate() + 1);
-        }
-
-        db.matches[matchId].lockTime = targetTime.toISOString();
-        db.matches[matchId].locked = false;
-        await saveDB(db);
-
-        const dayInfo = targetTime.getDate() === now.getDate() ? 'dzisiaj' : 'jutro';
-        return message.reply(`⏳ Mecz ID **${matchId}** zamknie się automatycznie **${dayInfo} o godzinie ${timeStr}**.`);
-    }
-
     if (command === 'resetranking') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.users = {};
         db.matches = {};
         db.nextMatchId = 1;
         db.settings.locked = false;
-        db.settings.lockTime = null;
         await saveDB(db);
         return message.reply('🔄 Zresetowano całą bazę danych i ranking.');
     }
@@ -392,11 +356,7 @@ client.on('messageCreate', async message => {
         let desc = '';
         for (const mId of matchKeys) {
             const m = db.matches[mId];
-            let lockInfo = m.locked ? ' (🔒 Zamknięty)' : '';
-            if (m.lockTime) {
-                const timeOnly = new Date(m.lockTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                lockInfo = ` (⏳ do ${timeOnly})`;
-            }
+            let lockInfo = m.locked ? ' (🔒 Zamknięty)' : ' (🟢 Otwarty)';
             desc += `• **ID ${mId}**: ${m.details}${lockInfo}\n`;
         }
         const embed = new EmbedBuilder().setTitle('📋 Lista aktywnych meczów').setDescription(desc).setColor(0x0099FF);
@@ -477,4 +437,15 @@ client.on('messageCreate', async message => {
     if (command === 'mojetypy' || command === 'historia') {
         const userData = db.users[message.author.id];
         if (!userData || Object.keys(userData.predictions).length === 0) return message.reply('📌 Brak zapisanych typów.');
-        let desc = ''
+        let desc = '';
+        for (const mId in userData.predictions) {
+            const matchName = db.matches[mId] ? db.matches[mId].details : 'Mecz usunięty';
+            desc += `• **[ID ${mId}]** ${matchName} ➔ \`${userData.predictions[mId]}\`\n`;
+        }
+        const embed = new EmbedBuilder().setTitle('📜 Twoje typy').setDescription(desc).setColor(0x9B59B6);
+        return message.reply({ embeds: [embed], flags: 64 });
+    }
+});
+
+client.login(TOKEN);
+                                        
