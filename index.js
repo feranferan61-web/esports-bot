@@ -1,6 +1,72 @@
 const { Client, GatewayIntentBits, PermissionsBitField, EmbedBuilder, ChannelType } = require('discord.js');
-const fs = require('fs');
+const { Client: PGClient } = require('pg');
 const http = require('http');
+
+// --- POŁĄCZENIE Z BAZĄ DANYCH SUPABASE ---
+const db = new PGClient({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
+
+db.connect()
+    .then(() => console.log('Połączono z bazą danych Supabase!'))
+    .catch(err => console.error('Błąd połączenia z bazą danych:', err));
+
+// Inicjalizacja tabel w bazie danych, jeśli jeszcze nie istnieją
+async function initDB() {
+    try {
+        await db.query(`
+            CREATE TABLE IF NOT EXISTS kv_store (
+                key TEXT PRIMARY KEY,
+                value JSONB
+            )
+        `);
+        
+        // Sprawdzamy, czy struktura danych już istnieje w tabeli, jeśli nie - tworzymy domyślną
+        const res = await db.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
+        if (res.rows.length === 0) {
+            const initialData = { 
+                matches: {}, 
+                users: {}, 
+                settings: { locked: false, lockTime: null }, 
+                nextMatchId: 1 
+            };
+            await db.query('INSERT INTO kv_store (key, value) VALUES ($1, $2)', ['main_db', JSON.stringify(initialData)]);
+        }
+        console.log('Struktura bazy danych gotowa.');
+    } catch (err) {
+        console.error('Błąd inicjalizacji bazy danych:', err);
+    }
+}
+
+initDB();
+
+// Funkcje pomocnicze do wczytywania i zapisu danych (zamiennik fs dla bazy SQL)
+async function loadDB() {
+    try {
+        const res = await db.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
+        if (res.rows.length > 0) {
+            let data = res.rows[0].value;
+            if (!data.settings) data.settings = { locked: false, lockTime: null };
+            if (!data.nextMatchId) data.nextMatchId = 1;
+            return data;
+        }
+    } catch (err) {
+        console.error('Błąd ładowania bazy:', err);
+    }
+    return { matches: {}, users: {}, settings: { locked: false, lockTime: null }, nextMatchId: 1 };
+}
+
+async function saveDB(data) {
+    try {
+        await db.query(
+            'INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
+            ['main_db', JSON.stringify(data)]
+        );
+    } catch (err) {
+        console.error('Błąd zapisu bazy:', err);
+    }
+}
 
 // --- MINI SERWER HTTP DLA UPTIMEROBOTA ---
 const server = http.createServer((req, res) => {
@@ -24,22 +90,6 @@ const client = new Client({
 
 const TOKEN = process.env.DISCORD_TOKEN;
 const PREFIX = '!';
-const DB_FILE = './database.json';
-
-function loadDB() {
-    if (!fs.existsSync(DB_FILE)) {
-        const initialData = { matches: {}, users: {}, settings: { locked: false, lockTime: null }, nextMatchId: 1 };
-        fs.writeFileSync(DB_FILE, JSON.stringify(initialData, null, 2));
-    }
-    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    if (!data.settings) data.settings = { locked: false, lockTime: null };
-    if (!data.nextMatchId) data.nextMatchId = 1;
-    return data;
-}
-
-function saveDB(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-}
 
 function extractScore(text) {
     if (!text) return null;
@@ -60,8 +110,8 @@ function getWinnerFromScore(scoreStr) {
 }
 
 // Sprawdzanie zamknięć co 5 sekund
-setInterval(() => {
-    const db = loadDB();
+setInterval(async () => {
+    const db = await loadDB();
     let modified = false;
     const now = new Date();
 
@@ -100,7 +150,7 @@ setInterval(() => {
         }
     }
 
-    if (modified) saveDB(db);
+    if (modified) await saveDB(db);
 }, 5000);
 
 client.once('ready', () => {
@@ -112,7 +162,7 @@ client.on('messageCreate', async message => {
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
-    const db = loadDB();
+    const db = await loadDB();
 
     // --- POMOC / KOMENDY ---
     if (command === 'komendy' || command === 'pomoc') {
@@ -121,7 +171,7 @@ client.on('messageCreate', async message => {
             .setColor(0x0099FF)
             .addFields(
                 { 
-                    name: '⚔️️ Komendy dla graczy', 
+                    name: '⚔ Komendy dla graczy', 
                     value: 
                         '`!mecze` - Lista aktywnych meczów\n' +
                         '`!typ [ID] [Wynik]` - Obstaw wynik (np. `!typ 1 2-1`)\n' +
@@ -140,7 +190,7 @@ client.on('messageCreate', async message => {
                         '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie meczu (np. `!zamknijmecz 1 18:00`)\n' +
                         '`!rozlicz [ID] [Wynik]` - Automatyczne rozliczenie meczu\n' +
                         '`!dodajpkt [@Gracz] [Punkty]` - Ręczne dodanie punktów\n' +
-                        '`!usunpkt [@Gracz] [Punkty]` - **NOWOŚĆ:** Ręczne usunięcie punktów (np. `!usunpkt @Feran 2`)\n' +
+                        '`!usunpkt [@Gracz] [Punkty]` - Ręczne usunięcie punktów (np. `!usunpkt @Feran 2`)\n' +
                         '`!ranking` - Tabela wyników\n' +
                         '`!resetranking` - Reset bazy'
                 }
@@ -158,7 +208,7 @@ client.on('messageCreate', async message => {
         db.nextMatchId++;
 
         db.matches[matchId] = { details: matchDetails, locked: false, lockTime: null };
-        saveDB(db);
+        await saveDB(db);
         return message.reply(`✅ Dodano mecz z automatycznym ID: **${matchId}** (${matchDetails}).`);
     }
 
@@ -169,7 +219,7 @@ client.on('messageCreate', async message => {
         if (!matchId || !newDetails || !db.matches[matchId]) return message.reply('❌ Użycie: `!edytujmecz [ID] [Nowa nazwa]`');
 
         db.matches[matchId].details = newDetails;
-        saveDB(db);
+        await saveDB(db);
         return message.reply(`✏️ Zaktualizowano nazwę meczu ID **${matchId}** na: *${newDetails}*`);
     }
 
@@ -179,21 +229,21 @@ client.on('messageCreate', async message => {
         if (!matchId || !db.matches[matchId]) return message.reply('❌ Podaj poprawne ID istniejącego meczu!');
 
         delete db.matches[matchId];
-        saveDB(db);
+        await saveDB(db);
         return message.reply(`🗑️ Usunięto mecz o ID: **${matchId}**`);
     }
 
     if (command === 'zamknij') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.settings.locked = true;
-        saveDB(db);
+        await saveDB(db);
         return message.reply('🔒 Zablokowano typowanie globalnie dla wszystkich meczów.');
     }
 
     if (command === 'otwórz' || command === 'otworz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         db.settings.locked = false;
-        saveDB(db);
+        await saveDB(db);
         return message.reply('🔓 Odblokowano typowanie globalnie.');
     }
 
@@ -221,7 +271,7 @@ client.on('messageCreate', async message => {
             if (now.getTime() - targetTime.getTime() <= 10 * 60 * 1000) {
                 db.matches[matchId].locked = true;
                 db.matches[matchId].lockTime = null;
-                saveDB(db);
+                await saveDB(db);
                 return message.reply(`🔒 Mecz ID **${matchId}** został natychmiast zamknięty (czas ${timeStr} minął).`);
             } else {
                 targetTime.setDate(targetTime.getDate() + 1);
@@ -230,7 +280,7 @@ client.on('messageCreate', async message => {
 
         db.matches[matchId].lockTime = targetTime.toISOString();
         db.matches[matchId].locked = false;
-        saveDB(db);
+        await saveDB(db);
         return message.reply(`⏳ Mecz ID **${matchId}** automatycznie zamknie się o godzinie **${timeStr}**.`);
     }
 
@@ -241,7 +291,7 @@ client.on('messageCreate', async message => {
         db.nextMatchId = 1;
         db.settings.locked = false;
         db.settings.lockTime = null;
-        saveDB(db);
+        await saveDB(db);
         return message.reply('🔄 Zresetowano całą bazę danych i ranking.');
     }
 
@@ -276,12 +326,12 @@ client.on('messageCreate', async message => {
         }
 
         db.users[userId].points = (db.users[userId].points || 0) + pointsToAdd;
-        saveDB(db);
+        await saveDB(db);
 
         return message.reply(`✅ Dodano **${pointsToAdd} pkt** dla gracza <@${userId}>. Aktualny stan: **${db.users[userId].points} pkt**.`);
     }
 
-    // --- ADMIN: RĘCZNE USUWANIE PUNKTÓW (NOWOŚĆ) ---
+    // --- ADMIN: RĘCZNE USUWANIE PUNKTÓW ---
     if (command === 'usunpkt' || command === 'usuńpkt') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         
@@ -298,7 +348,7 @@ client.on('messageCreate', async message => {
         }
 
         db.users[userId].points = Math.max(0, (db.users[userId].points || 0) - pointsToRemove);
-        saveDB(db);
+        await saveDB(db);
 
         return message.reply(`🗑️ Usunięto **${pointsToRemove} pkt** graczu <@${userId}>. Aktualny stan: **${db.users[userId].points} pkt**.`);
     }
@@ -352,7 +402,7 @@ client.on('messageCreate', async message => {
             resultsSummary += `<@${userId}>: ${hitType}\n`;
         }
 
-        saveDB(db);
+        await saveDB(db);
         if (count === 0) return message.reply(`⚠️ Żaden użytkownik nie obstawił meczu ID ${matchId}. Możesz dodać punkty ręcznie komendą \`!dodajpkt\`.`);
         return message.channel.send(resultsSummary);
     }
@@ -394,7 +444,7 @@ client.on('messageCreate', async message => {
         if (!db.users[userId]) db.users[userId] = { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
         
         db.users[userId].predictions[matchId] = pred;
-        saveDB(db);
+        await saveDB(db);
         return message.reply(`✅ <@${userId}>, zapisano typ: **${pred}** dla meczu ID **${matchId}**.`);
     }
 
@@ -429,35 +479,4 @@ client.on('messageCreate', async message => {
         let winRate = settledCount > 0 ? Math.round(((exactHits + winnerHits) / settledCount) * 100) : 0;
         const sortedUsers = Object.entries(db.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0));
         const userRankIndex = sortedUsers.findIndex(([id]) => id === userId);
-        const rankText = userRankIndex !== -1 ? `#${userRankIndex + 1}` : 'Poza rankingiem';
-
-        const embed = new EmbedBuilder()
-            .setTitle(`📊 Profil: ${message.author.username}`)
-            .setColor(0x00FFCC)
-            .addFields(
-                { name: '🏆 Punkty', value: `**${points} pkt** (Miejsce: ${rankText})`, inline: true },
-                { name: '🎯 Dokładny wynik (3 pkt)', value: `**${exactHits}**`, inline: true },
-                { name: '✅ Trafiony zwycięzca (1 pkt)', value: `**${winnerHits}**`, inline: true },
-                { name: '📈 Skuteczność', value: `**${winRate}%** (z ${settledCount})`, inline: true }
-            )
-            .setThumbnail(message.author.displayAvatarURL());
-
-        return message.reply({ embeds: [embed] });
-    }
-
-    // --- GRACZ: MOJE TYPY / HISTORIA ---
-    if (command === 'mojetypy' || command === 'historia') {
-        const userData = db.users[message.author.id];
-        if (!userData || Object.keys(userData.predictions).length === 0) return message.reply('📌 Brak zapisanych typów.');
-        let desc = '';
-        for (const mId in userData.predictions) {
-            const matchName = db.matches[mId] ? db.matches[mId].details : 'Mecz usunięty';
-            desc += `• **[ID ${mId}]** ${matchName} ➔ \`${userData.predictions[mId]}\`\n`;
-        }
-        const embed = new EmbedBuilder().setTitle('📜 Twoje typy').setDescription(desc).setColor(0x9B59B6);
-        return message.reply({ embeds: [embed], flags: 64 });
-    }
-});
-
-client.login(TOKEN);
-        
+        const rankText = u
