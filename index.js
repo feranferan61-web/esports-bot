@@ -12,7 +12,6 @@ db.connect()
     .then(() => console.log('Połączono z bazą danych Supabase!'))
     .catch(err => console.error('Błąd połączenia z bazą danych:', err));
 
-// Inicjalizacja tabel w bazie danych, jeśli jeszcze nie istnieją
 async function initDB() {
     try {
         await db.query(`
@@ -40,7 +39,6 @@ async function initDB() {
 
 initDB();
 
-// Funkcje pomocnicze do wczytywania i zapisu danych
 async function loadDB() {
     try {
         const res = await db.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
@@ -108,15 +106,14 @@ function getWinnerFromScore(scoreStr) {
     return 'draw';
 }
 
-// Sprawdzanie zamknięć co 5 sekund
+// Sprawdzanie zamknięć co 5 sekund (porównanie za pomocą znaczników czasu / timestampów)
 setInterval(async () => {
     const db = await loadDB();
     let modified = false;
-    const now = new Date();
+    const nowTimestamp = Date.now();
 
     if (!db.settings.locked && db.settings.lockTime) {
-        const targetTime = new Date(db.settings.lockTime);
-        if (now >= targetTime) {
+        if (nowTimestamp >= db.settings.lockTime) {
             db.settings.locked = true;
             db.settings.lockTime = null;
             modified = true;
@@ -133,8 +130,7 @@ setInterval(async () => {
     for (const mId in db.matches) {
         const match = db.matches[mId];
         if (!match.locked && match.lockTime) {
-            const matchTargetTime = new Date(match.lockTime);
-            if (now >= matchTargetTime) {
+            if (nowTimestamp >= match.lockTime) {
                 match.locked = true;
                 match.lockTime = null;
                 modified = true;
@@ -219,7 +215,7 @@ client.on('messageCreate', async message => {
 
         db.matches[matchId].details = newDetails;
         await saveDB(db);
-        return message.reply(`✏️ Zaktualizowano nazwę meczu ID **${matchId}** na: *${newDetails}*`);
+        return message.reply(`✏️️ Zaktualizowano nazwę meczu ID **${matchId}** na: *${newDetails}*`);
     }
 
     if (command === 'usunmecz') {
@@ -246,7 +242,7 @@ client.on('messageCreate', async message => {
         return message.reply('🔓 Odblokowano typowanie globalnie.');
     }
 
-    // --- ADMIN: ZAMKNIJ MECZ ---
+    // --- ADMIN: ZAMKNIJ MECZ (POPRAWIONA LOGIKA CZASOWA) ---
     if (command === 'zamknijmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         
@@ -266,12 +262,13 @@ client.on('messageCreate', async message => {
         const targetTime = new Date();
         targetTime.setHours(hours, minutes, 0, 0);
 
-        // Jeśli podana godzina już minęła dzisiaj, ustawiamy zamknięcie na jutro
-        if (targetTime <= now) {
+        // Jeśli podana godzina już minęła dzisiaj, ustawiamy na jutro
+        if (targetTime.getTime() <= now.getTime()) {
             targetTime.setDate(targetTime.getDate() + 1);
         }
 
-        db.matches[matchId].lockTime = targetTime.toISOString();
+        // Zapisujemy jako czysty timestamp (liczba milisekund), co całkowicie eliminuje problemy ze strefami czasowymi na Renderze
+        db.matches[matchId].lockTime = targetTime.getTime();
         db.matches[matchId].locked = false;
         await saveDB(db);
 
@@ -480,4 +477,4 @@ client.on('messageCreate', async message => {
             .setTitle(`📊 Profil: ${message.author.username}`)
             .setColor(0x00FFCC)
             .addFields(
-                { name: '🏆 Pun
+               
