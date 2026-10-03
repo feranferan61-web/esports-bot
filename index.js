@@ -116,7 +116,6 @@ client.on('messageCreate', async message => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
     
-    // Używamy zmiennej 'database', aby nie kolidowała ze stałą 'db' na górze pliku
     const database = await loadDB();
 
     // --- POMOC / KOMENDY ---
