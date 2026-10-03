@@ -59,6 +59,7 @@ function getWinnerFromScore(scoreStr) {
     return 'draw';
 }
 
+// Sprawdzanie zamknięć co 5 sekund
 setInterval(() => {
     const db = loadDB();
     let modified = false;
@@ -100,7 +101,7 @@ setInterval(() => {
     }
 
     if (modified) saveDB(db);
-}, 10000);
+}, 5000);
 
 client.once('ready', () => {
     console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy.`);
@@ -120,7 +121,7 @@ client.on('messageCreate', async message => {
             .setColor(0x0099FF)
             .addFields(
                 { 
-                    name: '⚔️ Komendy dla graczy', 
+                    name: '⚔️️ Komendy dla graczy', 
                     value: 
                         '`!mecze` - Lista aktywnych meczów\n' +
                         '`!typ [ID] [Wynik]` - Obstaw wynik (np. `!typ 1 2-1`)\n' +
@@ -136,9 +137,10 @@ client.on('messageCreate', async message => {
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę\n' +
                         '`!usunmecz [ID]` - Usuwa mecz\n' +
                         '`!zamknij` / `!otwórz` - Blokada globalna\n' +
-                        '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie meczu\n' +
+                        '`!zamknijmecz [ID] [HH:MM]` - Automatyczne zamknięcie meczu (np. `!zamknijmecz 1 18:00`)\n' +
                         '`!rozlicz [ID] [Wynik]` - Automatyczne rozliczenie meczu\n' +
-                        '`!dodajpkt [@Gracz] [Punkty]` - **NOWOŚĆ:** Ręczne dodanie punktów (np. `!dodajpkt @Feran 3`)\n' +
+                        '`!dodajpkt [@Gracz] [Punkty]` - Ręczne dodanie punktów\n' +
+                        '`!usunpkt [@Gracz] [Punkty]` - **NOWOŚĆ:** Ręczne usunięcie punktów (np. `!usunpkt @Feran 2`)\n' +
                         '`!ranking` - Tabela wyników\n' +
                         '`!resetranking` - Reset bazy'
                 }
@@ -195,28 +197,32 @@ client.on('messageCreate', async message => {
         return message.reply('🔓 Odblokowano typowanie globalnie.');
     }
 
+    // --- ADMIN: ZAMKNIJ MECZ ---
     if (command === 'zamknijmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        
         const matchId = args[0];
         const timeStr = args[1];
 
         if (!matchId || !timeStr || !db.matches[matchId]) {
-            return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` (np. `!zamknijmecz 1 11:03`)');
+            return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` (np. `!zamknijmecz 1 18:00`)');
         }
 
         const [hours, minutes] = timeStr.split(':').map(Number);
-        if (isNaN(hours) || isNaN(minutes)) return message.reply('❌ Błędny format godziny! Użyj np. `11:03`.');
+        if (isNaN(hours) || isNaN(minutes)) {
+            return message.reply('❌ Błędny format godziny! Użyj formatu 24h, np. `!zamknijmecz 1 18:00`.');
+        }
 
         const now = new Date();
         const targetTime = new Date();
         targetTime.setHours(hours, minutes, 0, 0);
 
         if (targetTime <= now) {
-            if (now.getTime() - targetTime.getTime() <= 5 * 60 * 1000) {
+            if (now.getTime() - targetTime.getTime() <= 10 * 60 * 1000) {
                 db.matches[matchId].locked = true;
                 db.matches[matchId].lockTime = null;
                 saveDB(db);
-                return message.reply(`🔒 Mecz ID **${matchId}** został natychmiast zamknięty.`);
+                return message.reply(`🔒 Mecz ID **${matchId}** został natychmiast zamknięty (czas ${timeStr} minął).`);
             } else {
                 targetTime.setDate(targetTime.getDate() + 1);
             }
@@ -225,7 +231,7 @@ client.on('messageCreate', async message => {
         db.matches[matchId].lockTime = targetTime.toISOString();
         db.matches[matchId].locked = false;
         saveDB(db);
-        return message.reply(`⏳ Mecz ID **${matchId}** zamknie się o godzinie **${timeStr}**.`);
+        return message.reply(`⏳ Mecz ID **${matchId}** automatycznie zamknie się o godzinie **${timeStr}**.`);
     }
 
     if (command === 'resetranking') {
@@ -253,7 +259,7 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    // --- ADMIN: RĘCZNE DODAWANIE PUNKTÓW (NOWOŚĆ) ---
+    // --- ADMIN: RĘCZNE DODAWANIE PUNKTÓW ---
     if (command === 'dodajpkt') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         
@@ -273,6 +279,28 @@ client.on('messageCreate', async message => {
         saveDB(db);
 
         return message.reply(`✅ Dodano **${pointsToAdd} pkt** dla gracza <@${userId}>. Aktualny stan: **${db.users[userId].points} pkt**.`);
+    }
+
+    // --- ADMIN: RĘCZNE USUWANIE PUNKTÓW (NOWOŚĆ) ---
+    if (command === 'usunpkt' || command === 'usuńpkt') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
+        
+        const targetUser = message.mentions.users.first();
+        const pointsToRemove = parseInt(args[1], 10);
+
+        if (!targetUser || isNaN(pointsToRemove)) {
+            return message.reply('❌ Użycie: `!usunpkt [@Gracz] [Liczba punktów]` (np. `!usunpkt @Feran 2`)');
+        }
+
+        const userId = targetUser.id;
+        if (!db.users[userId]) {
+            db.users[userId] = { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        }
+
+        db.users[userId].points = Math.max(0, (db.users[userId].points || 0) - pointsToRemove);
+        saveDB(db);
+
+        return message.reply(`🗑️ Usunięto **${pointsToRemove} pkt** graczu <@${userId}>. Aktualny stan: **${db.users[userId].points} pkt**.`);
     }
 
     // --- ADMIN: ROZLICZ MECZ ---
