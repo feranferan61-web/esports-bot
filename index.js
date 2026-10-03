@@ -48,7 +48,7 @@ function extractScore(text) {
     return match ? match[0].replace(':', '-') : null;
 }
 
-// Określa zwycięzcę na podstawie wyniku: 'left' (gospodarz), 'right' (gość), 'draw' (remis)
+// Określa zwycięzcę na podstawie wyniku
 function getWinnerFromScore(scoreStr) {
     if (!scoreStr) return null;
     const parts = scoreStr.split(/[-:]/);
@@ -61,7 +61,7 @@ function getWinnerFromScore(scoreStr) {
     return 'draw';
 }
 
-// Automatyczne zamykanie meczów co 60 sekund
+// Sprawdzanie zamknięć co 10 sekund (dla większej precyzji)
 setInterval(() => {
     const db = loadDB();
     let modified = false;
@@ -103,7 +103,7 @@ setInterval(() => {
     }
 
     if (modified) saveDB(db);
-}, 60000);
+}, 10000); // Sprawdzanie co 10 sekund
 
 client.once('ready', () => {
     console.log(`Zalogowano jako ${client.user.tag}! Bot gotowy.`);
@@ -201,28 +201,38 @@ client.on('messageCreate', async message => {
         return message.reply('🔓 Odblokowano typowanie globalnie.');
     }
 
-    // --- ADMIN: ZAMKNIJ MECZ (CZASOWO) ---
+    // --- ADMIN: ZAMKNIJ MECZ (CZASOWO - NAPRAWIONE) ---
     if (command === 'zamknijmecz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
-        const timeStr = args[1]; // np. 21:30
+        const timeStr = args[1]; // np. 11:03
 
         if (!matchId || !timeStr || !db.matches[matchId]) {
-            return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` (czas w formacie 24h, np. `!zamknijmecz 1 20:45`)');
+            return message.reply('❌ Użycie: `!zamknijmecz [ID] [HH:MM]` (czas w formacie 24h, np. `!zamknijmecz 1 11:03`)');
         }
 
         const [hours, minutes] = timeStr.split(':').map(Number);
-        if (isNaN(hours) || isNaN(minutes)) return message.reply('❌ Błędny format godziny! Użyj np. `20:45`.');
+        if (isNaN(hours) || isNaN(minutes)) return message.reply('❌ Błędny format godziny! Użyj np. `11:03`.');
 
         const now = new Date();
         const targetTime = new Date();
         targetTime.setHours(hours, minutes, 0, 0);
 
+        // Jeśli podana godzina już minęła dzisiaj, ustaw na jutro (lub natychmiast zamknij, jeśli minęła bardzo niedawno)
         if (targetTime <= now) {
-            targetTime.setDate(targetTime.getDate() + 1); // Jeśli godzina już minęła dzisiaj, ustaw na jutro
+            // Jeśli minęła przed chwilą w ciągu ostatnich 5 minut, zablokuj od razu!
+            if (now.getTime() - targetTime.getTime() <= 5 * 60 * 1000) {
+                db.matches[matchId].locked = true;
+                db.matches[matchId].lockTime = null;
+                saveDB(db);
+                return message.reply(`🔒 Mecz ID **${matchId}** został natychmiast zamknięty (czas ${timeStr} właśnie minął).`);
+            } else {
+                targetTime.setDate(targetTime.getDate() + 1);
+            }
         }
 
         db.matches[matchId].lockTime = targetTime.toISOString();
+        db.matches[matchId].locked = false; // na wszelki wypadek
         saveDB(db);
         return message.reply(`⏳ Mecz ID **${matchId}** automatycznie zamknie się o godzinie **${timeStr}**.`);
     }
@@ -322,7 +332,7 @@ client.on('messageCreate', async message => {
             const m = db.matches[mId];
             let lockInfo = m.locked ? ' (🔒 Zamknięty)' : '';
             if (m.lockTime) {
-                const timeOnly = new Date(m.lockTime).toLocaleTimeString([], { hour: '2-2-digit' ? '2-digit' : '2-digit', minute: '2-digit' });
+                const timeOnly = new Date(m.lockTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
                 lockInfo = ` (⏳ do ${timeOnly})`;
             }
             desc += `• **ID ${mId}**: ${m.details}${lockInfo}\n`;
@@ -419,4 +429,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-                                                              
+    
