@@ -117,7 +117,7 @@ client.on('messageCreate', async message => {
 
     if (command === 'komendy' || command === 'pomoc') {
         const embed = new EmbedBuilder()
-            .setTitle('📖 Lista komend bota e-sportowego (AKTUALNA)')
+            .setTitle('📖 Lista komend bota e-sportowego (z BOOST x3)')
             .setColor(0x0099FF)
             .addFields(
                 { 
@@ -125,6 +125,7 @@ client.on('messageCreate', async message => {
                     value: 
                         '`!mecze` - Lista aktywnych meczów\n' +
                         '`!typ [ID] [Wynik]` - Obstaw wynik (np. `!typ 1 2-1`)\n' +
+                        '`!boost [ID] [Wynik]` - Obstaw wynik z **BOOSTEM x3**!\n' +
                         '`!mojetypy` - Twoje typy\n' +
                         '`!profil` - Twój profil i statystyki\n' +
                         '`!historia` - Historia typów\n' +
@@ -136,10 +137,10 @@ client.on('messageCreate', async message => {
                         '`!dodajmecz [Nazwa]` - Dodaje mecz\n' +
                         '`!edytujmecz [ID] [Nowa nazwa]` - Zmienia nazwę\n' +
                         '`!usunmecz [ID]` - Usuwa mecz\n' +
-                        '`!zablokujmecz [ID]` - Blokuje pojedynczy mecz\n' +
-                        '`!odblokujmecz [ID]` - Odblokowuje pojedynczy mecz\n' +
+                        '`!zablokujmecz [ID]` - Blokuje mecz\n' +
+                        '`!odblokujmecz [ID]` - Odblokowuje mecz\n' +
                         '`!zamknij` / `!otwórz` - Blokada globalna\n' +
-                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz\n' +
+                        '`!rozlicz [ID] [Wynik]` - Rozlicza mecz (nalicza Boost x3)\n' +
                         '`!dodajpkt [@Gracz] [Punkty]` - Dodaje punkty\n' +
                         '`!usunpkt [@Gracz] [Punkty]` - Usuwa punkty\n' +
                         '`!ranking` - Tabela wyników\n' +
@@ -180,7 +181,7 @@ client.on('messageCreate', async message => {
 
         delete database.matches[matchId];
         await saveDB(database);
-        return message.reply(`🗑️️ Usunięto mecz o ID: **${matchId}**`);
+        return message.reply(`🗑 Usunięto mecz o ID: **${matchId}**`);
     }
 
     if (command === 'zablokujmecz') {
@@ -248,11 +249,11 @@ client.on('messageCreate', async message => {
         if (!targetUser || isNaN(pointsToAdd)) return message.reply('❌ Użycie: `!dodajpkt [@Gracz] [Punkty]`');
 
         const userId = targetUser.id;
-        if (!database.users[userId]) database.users[userId] = { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        if (!database.users[userId]) database.users[userId] = { predictions: {}, boosts: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
 
         database.users[userId].points = (database.users[userId].points || 0) + pointsToAdd;
         await saveDB(database);
-        return message.reply(`✅ Dodano **${pointsToAdd} pkt** dla <@userId>.`);
+        return message.reply(`✅ Dodano **${pointsToAdd} pkt** dla <@${userId}>.`);
     }
 
     if (command === 'usunpkt' || command === 'usuńpkt') {
@@ -262,13 +263,14 @@ client.on('messageCreate', async message => {
         if (!targetUser || isNaN(pointsToRemove)) return message.reply('❌ Użycie: `!usunpkt [@Gracz] [Punkty]`');
 
         const userId = targetUser.id;
-        if (!database.users[userId]) database.users[userId] = { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        if (!database.users[userId]) database.users[userId] = { predictions: {}, boosts: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
 
         database.users[userId].points = Math.max(0, (database.users[userId].points || 0) - pointsToRemove);
         await saveDB(database);
         return message.reply(`🗑️ Usunięto **${pointsToRemove} pkt** graczu <@${userId}>.`);
     }
 
+    // --- ADMIN: ROZLICZ MECZ (Z OBSŁUGĄ BOOST x3) ---
     if (command === 'rozlicz') {
         if (!message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return message.reply('❌ Brak uprawnień!');
         const matchId = args[0];
@@ -292,22 +294,33 @@ client.on('messageCreate', async message => {
             if (user.exactHits === undefined) user.exactHits = 0;
             if (user.winnerHits === undefined) user.winnerHits = 0;
             if (user.settledCount === undefined) user.settledCount = 0;
+            if (!user.boosts) user.boosts = {};
+
             user.settledCount += 1;
 
             const playerScores = extractScore(playerPred);
             const playerWinner = getWinnerFromScore(playerScores);
 
+            let earnedPoints = 0;
+            let hitDescription = '';
+            const isBoosted = user.boosts[matchId] === true;
+            const multiplier = isBoosted ? 3 : 1;
+            const boostLabel = isBoosted ? ' 🚀 **[BOOST x3]**' : '';
+
             if (playerScores && playerScores === officialScore) {
-                user.points += 3;
+                earnedPoints = 3 * multiplier;
                 user.exactHits += 1;
-                resultsSummary += `<@${userId}>: 🎯 Dokładny wynik (+3 pkt)\n`;
+                hitDescription = `🎯 Dokładny wynik (${playerPred})`;
             } else if (playerWinner && officialWinner && playerWinner === officialWinner) {
-                user.points += 1;
+                earnedPoints = 1 * multiplier;
                 user.winnerHits += 1;
-                resultsSummary += `<@${userId}>: ✅ Zwycięzca (+1 pkt)\n`;
+                hitDescription = `✅ Zwycięzca (${playerPred})`;
             } else {
-                resultsSummary += `<@${userId}>: ❌ Pudło (0 pkt)\n`;
+                hitDescription = `❌ Pudło (${playerPred})`;
             }
+
+            user.points += earnedPoints;
+            resultsSummary += `<@${userId}>: ${hitDescription}${boostLabel} ➔ **+${earnedPoints} pkt**\n`;
         }
 
         await saveDB(database);
@@ -327,6 +340,7 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
+    // --- GRACZ: ZWYKŁY TYP ---
     if (command === 'typ') {
         if (database.settings.locked) return message.reply('❌ Globalna blokada typowania!');
         const matchId = args[0];
@@ -338,11 +352,34 @@ client.on('messageCreate', async message => {
         if (match.locked) return message.reply('❌ Ten mecz jest zamknięty.');
 
         const userId = message.author.id;
-        if (!database.users[userId]) database.users[userId] = { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        if (!database.users[userId]) database.users[userId] = { predictions: {}, boosts: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        if (!database.users[userId].boosts) database.users[userId].boosts = {};
         
         database.users[userId].predictions[matchId] = pred;
+        database.users[userId].boosts[matchId] = false; // zwykły typ bez boosta
         await saveDB(database);
-        return message.reply(`✅ Zapisano typ **${pred**} dla meczu ID **${matchId}**.`);
+        return message.reply(`✅ Zapisano typ **${pred}** dla meczu ID **${matchId}**.`);
+    }
+
+    // --- GRACZ: TYP Z BOOSTEX3 ---
+    if (command === 'boost') {
+        if (database.settings.locked) return message.reply('❌ Globalna blokada typowania!');
+        const matchId = args[0];
+        const pred = args.slice(1).join(' ');
+        if (!matchId || !pred) return message.reply('❌ Użycie: `!boost [ID] [Wynik]`');
+        
+        const match = database.matches[matchId];
+        if (!match) return message.reply('❌ Mecz nie istnieje!');
+        if (match.locked) return message.reply('❌ Ten mecz jest zamknięty.');
+
+        const userId = message.author.id;
+        if (!database.users[userId]) database.users[userId] = { predictions: {}, boosts: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        if (!database.users[userId].boosts) database.users[userId].boosts = {};
+        
+        database.users[userId].predictions[matchId] = pred;
+        database.users[userId].boosts[matchId] = true; // AKTYWNY BOOST X3!
+        await saveDB(database);
+        return message.reply(`🚀 Zapisano typ z **BOOSTEX3**: **${pred}** dla meczu ID **${matchId}**! Punkty za ten mecz zostaną pomnożone x3.`);
     }
 
     if (command === 'prywatnykanal') {
@@ -362,7 +399,7 @@ client.on('messageCreate', async message => {
 
     if (command === 'profil' || command === 'statystyki') {
         const userId = message.author.id;
-        const userData = database.users[userId] || { predictions: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+        const userData = database.users[userId] || { predictions: {}, boosts: {}, points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
         const winRate = userData.settledCount > 0 ? Math.round(((userData.exactHits + userData.winnerHits) / userData.settledCount) * 100) : 0;
         
         const sortedUsers = Object.entries(database.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0));
@@ -386,7 +423,8 @@ client.on('messageCreate', async message => {
         let desc = '';
         for (const mId in userData.predictions) {
             const matchName = database.matches[mId] ? database.matches[mId].details : 'Usunięty mecz';
-            desc += `• **[ID ${mId}]** ${matchName} ➔ \`${userData.predictions[mId]}\`\n`;
+            const isBoosted = userData.boosts && userData.boosts[mId] ? ' 🚀 **[BOOST x3]**' : '';
+            desc += `• **[ID ${mId}]** ${matchName} ➔ \`${userData.predictions[mId]}\`${isBoosted}\n`;
         }
         const embed = new EmbedBuilder().setTitle('📜 Twoje typy').setDescription(desc).setColor(0x9B59B6);
         return message.reply({ embeds: [embed], flags: 64 });
@@ -394,4 +432,4 @@ client.on('messageCreate', async message => {
 });
 
 client.login(TOKEN);
-        
+          
