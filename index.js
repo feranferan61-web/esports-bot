@@ -97,6 +97,7 @@ const slashCommands = [
                         { name: 'BO3', value: 'BO3' },
                         { name: 'BO5', value: 'BO5' }
                     ))
+                .addStringOption(opt => opt.setName('data_blokady').setDescription('Data i godzina blokady np. 12-10-2026 12:00').setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('zablokuj')
@@ -127,10 +128,47 @@ async function registerSlashCommands() {
     }
 }
 
+// Funkcja parująca datę z formatu "DD-MM-YYYY HH:mm" na obiekt Date
+function parseCustomDate(dateStr) {
+    if (!dateStr) return null;
+    try {
+        const [datePart, timePart] = dateStr.trim().split(' ');
+        const [day, month, year] = datePart.split('-');
+        const [hour, minute] = timePart.split(':');
+        return new Date(year, month - 1, day, hour, minute);
+    } catch (e) {
+        return null;
+    }
+}
+
+// Pętla sprawdzająca co minutę, czy jakiś mecz powinien zostać zablokowany
+function startAutoLockChecker() {
+    setInterval(async () => {
+        const now = new Date();
+        let changed = false;
+
+        for (const [mId, m] of Object.entries(memoryDB.matches)) {
+            if (!m.locked && m.lockDate) {
+                const lockTime = new Date(m.lockDate);
+                if (now >= lockTime) {
+                    m.locked = true;
+                    changed = true;
+                    console.log(`🔒 Automatycznie zablokowano mecz ID ${mId} (${m.details}) o czasie${m.lockDate}`);
+                }
+            }
+        }
+
+        if (changed) {
+            await saveDB();
+        }
+    }, 60000); // Sprawdza co 60 sekund
+}
+
 client.once('ready', async () => {
     await initDB();
     console.log(`🤖 Zalogowano jako ${client.user.tag}!`);
     await registerSlashCommands();
+    startAutoLockChecker();
 });
 
 client.on('interactionCreate', async interaction => {
@@ -150,7 +188,10 @@ client.on('interactionCreate', async interaction => {
                 for (const mId of matchKeys) {
                     const m = memoryDB.matches[mId];
                     if (!m || m.locked) continue;
-                    desc += `• **ID ${mId}**: ${m.details} [${m.format}]\n`;
+                    
+                    let lockInfo = m.lockDate ? ` (Blokada: ${m.lockDate})` : '';
+                    desc += `• **ID ${mId}**:${m.details} [${m.format}]${lockInfo}\n`;
+                    
                     selectOptions.push({
                         label: `Mecz ${mId}:${m.details}`.substring(0, 100),
                         description: `Format: ${m.format}`,
@@ -244,13 +285,34 @@ client.on('interactionCreate', async interaction => {
                     const teamA = options.getString('druzyna_a');
                     const teamB = options.getString('druzyna_b');
                     const format = options.getString('format');
+                    const dataBlokadyStr = options.getString('data_blokady');
+
+                    let lockDateObj = null;
+                    if (dataBlokadyStr) {
+                        lockDateObj = parseCustomDate(dataBlokadyStr);
+                        if (!lockDateObj || isNaN(lockDateObj.getTime())) {
+                            return interaction.reply({ content: '❌ Niepoprawny format daty! Użyj formatu: `DD-MM-YYYY HH:mm` (np. `12-10-2026 12:00`).', ephemeral: true });
+                        }
+                    }
 
                     const matchId = memoryDB.nextMatchId.toString();
                     memoryDB.nextMatchId++;
-                    memoryDB.matches[matchId] = { details: `${teamA} vs${teamB}`, teamA, teamB, format, locked: false };
+                    
+                    memoryDB.matches[matchId] = { 
+                        details: `${teamA} vs${teamB}`, 
+                        teamA, 
+                        teamB, 
+                        format, 
+                        locked: false,
+                        lockDate: lockDateObj ? lockDateObj.toISOString() : null
+                    };
 
                     await saveDB();
-                    return interaction.reply({ content: `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})` });
+
+                    let msg = `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})`;
+                    if (lockDateObj) msg += `\n⏰ Automatyczna blokada ustawiona na: \`${dataBlokadyStr}\``;
+
+                    return interaction.reply({ content: msg });
                 }
 
                 if (subcommand === 'zablokuj') {
@@ -307,7 +369,7 @@ client.on('interactionCreate', async interaction => {
             if (interaction.customId === 'select_match_to_bet') {
                 const matchId = interaction.values[0].replace('typ_mecz_', '');
                 const match = memoryDB.matches[matchId];
-                if (!match || match.locked) return interaction.reply({ content: '❌ Mecz niedostępny.', ephemeral: true });
+                if (!match || match.locked) return interaction.reply({ content: '❌ Mecz niedostępny lub został zablokowany.', ephemeral: true });
 
                 const modal = new ModalBuilder().setCustomId(`modal_bet_${matchId}`).setTitle(`Typowanie: ${match.details}`);
 
@@ -365,34 +427,10 @@ client.on('interactionCreate', async interaction => {
             if (interaction.customId.startsWith('modal_bet_')) {
                 const matchId = interaction.customId.replace('modal_bet_', '');
                 const match = memoryDB.matches[matchId];
-                const score = interaction.fields.getTextInputValue('score_input').trim();
-                const mvp = interaction.fields.getTextInputValue('mvp_input').trim();
                 
-                let map1 = 'Brak', map2 = 'Brak', map3 = 'Brak';
-                try { map1 = interaction.fields.getTextInputValue('map1_input').trim() || 'Brak'; } catch (e) {}
-                try { map2 = interaction.fields.getTextInputValue('map2_input').trim() || 'Brak'; } catch (e) {}
-                try { map3 = interaction.fields.getTextInputValue('map3_input').trim() || 'Brak'; } catch (e) {}
+                // Sprawdzenie na wypadek, gdyby mecz zablokował się w trakcie wypełniania formularza
+                if (match && match.locked) {
+                    return interaction.reply({ content: '❌ Czas na typowanie tego meczu właśnie minął (mecz został zablokowany).', ephemeral: true });
+                }
 
-                if (!memoryDB.bets[matchId]) memoryDB.bets[matchId] = {};
-                memoryDB.bets[matchId][interaction.user.id] = { score, map1, map2, map3, mvp, timestamp: new Date().toISOString() };
-
-                await saveDB();
-
-                let replyMsg = `✅ Zapisano Twój typ na mecz **${match ? match.details : 'ID ' + matchId}**!\n🎯 **Wynik serii:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``;
-                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1:** \`${map1}\``;
-                if (map2 !== 'Brak') replyMsg += `\n🗺️ **Mapa 2:** \`${map2}\``;
-                if (map3 !== 'Brak') replyMsg += `\n🗺️ **Decider (Mapa 3):** \`${map3}\``;
-
-                return interaction.reply({ content: replyMsg, ephemeral: true });
-            }
-        }
-    } catch (err) {
-        console.error('❌ Błąd obsługi interakcji:', err);
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ Wystąpił błąd podczas przetwarzania żądania.', ephemeral: true });
-        }
-    }
-});
-
-client.login(process.env.DISCORD_TOKEN);
-                       
+                const score = interaction.fields.getTe
