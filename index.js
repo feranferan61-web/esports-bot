@@ -110,6 +110,7 @@ const slashCommands = [
                 .addStringOption(opt => opt.setName('mvp').setDescription('MVP (Nick)').setRequired(true))
                 .addStringOption(opt => opt.setName('mapa1').setDescription('Wynik Mapy 1').setRequired(false))
                 .addStringOption(opt => opt.setName('mapa2').setDescription('Wynik Mapy 2').setRequired(false))
+                .addStringOption(opt => opt.setName('mapa3').setDescription('Wynik Decidera (Mapa 3)').setRequired(false))
         )
 ].map(cmd => cmd.toJSON());
 
@@ -175,10 +176,11 @@ client.on('interactionCreate', async interaction => {
                     if (bets[userId]) {
                         const m = memoryDB.matches[mId] || { details: `Mecz ID ${mId}`, teamA: 'Drużyna A', teamB: 'Drużyna B' };
                         const userBet = bets[userId];
-                        let details = `• **${m.details}** (ID${mId}):\n  🎯 Wynik: \`${userBet.score}\` | ⭐ MVP: \`${userBet.mvp}\``;
+                        let details = `• **${m.details}** (ID${mId}):\n  🎯 Wynik serii: \`${userBet.score}\` | ⭐ MVP: \`${userBet.mvp}\``;
                         
                         if (userBet.map1 && userBet.map1 !== 'Brak') details += `\n  🗺️ Mapa 1 (${m.teamA}): \`${userBet.map1}\``;
                         if (userBet.map2 && userBet.map2 !== 'Brak') details += `\n  🗺️ Mapa 2 (${m.teamB}): \`${userBet.map2}\``;
+                        if (userBet.map3 && userBet.map3 !== 'Brak') details += `\n  🗺️ Decider (Mapa 3): \`${userBet.map3}\``;
                         
                         userBets.push(details);
                     }
@@ -243,7 +245,7 @@ client.on('interactionCreate', async interaction => {
 
                     const matchId = memoryDB.nextMatchId.toString();
                     memoryDB.nextMatchId++;
-                    memoryDB.matches[matchId] = { details: `${teamA} vs ${teamB}`, teamA, teamB, format, locked: false };
+                    memoryDB.matches[matchId] = { details: `${teamA} vs${teamB}`, teamA, teamB, format, locked: false };
 
                     await saveDB();
                     return interaction.reply({ content: `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})` });
@@ -264,6 +266,7 @@ client.on('interactionCreate', async interaction => {
                     const officialMVP = options.getString('mvp').trim().toLowerCase();
                     const officialMap1 = (options.getString('mapa1') || '').trim();
                     const officialMap2 = (options.getString('mapa2') || '').trim();
+                    const officialMap3 = (options.getString('mapa3') || '').trim();
 
                     const match = memoryDB.matches[matchId];
                     if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu.', ephemeral: true });
@@ -288,6 +291,7 @@ client.on('interactionCreate', async interaction => {
 
                         if (officialMap1 && (bet.map1 || '').trim() === officialMap1) u.points += 2;
                         if (officialMap2 && (bet.map2 || '').trim() === officialMap2) u.points += 2;
+                        if (officialMap3 && (bet.map3 || '').trim() === officialMap3) u.points += 2;
                         if ((bet.mvp || '').trim().toLowerCase() === officialMVP) u.points += 2;
                     }
 
@@ -307,22 +311,47 @@ client.on('interactionCreate', async interaction => {
 
                 const scoreInput = new TextInputBuilder()
                     .setCustomId('score_input')
-                    .setLabel(`Wynik serii (np. 2:1)`)
+                    .setLabel(`Wynik serii (np. 2:0 lub 2:1)`)
+                    .setPlaceholder('Wpisz wynik ogólny serii')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
                 const mvpInput = new TextInputBuilder()
                     .setCustomId('mvp_input')
-                    .setLabel('MVP HLTV (Nick)')
+                    .setLabel('MVP HLTV (Nick gracza)')
+                    .setPlaceholder('Wpisz nick zawodnika')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
                 const components = [new ActionRowBuilder().addComponents(scoreInput)];
 
                 if (match.format === 'BO3' || match.format === 'BO5') {
-                    const map1Input = new TextInputBuilder().setCustomId('map1_input').setLabel(`Mapa 1 (Pick: ${match.teamA})`).setStyle(TextInputStyle.Short).setRequired(false);
-                    const map2Input = new TextInputBuilder().setCustomId('map2_input').setLabel(`Mapa 2 (Pick: ${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(false);
-                    components.push(new ActionRowBuilder().addComponents(map1Input), new ActionRowBuilder().addComponents(map2Input));
+                    const map1Input = new TextInputBuilder()
+                        .setCustomId('map1_input')
+                        .setLabel(`Mapa 1 (Pick: ${match.teamA})`)
+                        .setPlaceholder('np. 13:8')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(false);
+
+                    const map2Input = new TextInputBuilder()
+                        .setCustomId('map2_input')
+                        .setLabel(`Mapa 2 (Pick: ${match.teamB})`)
+                        .setPlaceholder('np. 10:13')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(false);
+
+                    const map3Input = new TextInputBuilder()
+                        .setCustomId('map3_input')
+                        .setLabel(`Decider - Mapa 3 (Tylko dla wyników 2:1 / 1:2)`)
+                        .setPlaceholder('np. 13:11 (Zostaw puste dla 2:0 / 0:2)')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(false);
+
+                    components.push(
+                        new ActionRowBuilder().addComponents(map1Input),
+                        new ActionRowBuilder().addComponents(map2Input),
+                        new ActionRowBuilder().addComponents(map3Input)
+                    );
                 }
 
                 components.push(new ActionRowBuilder().addComponents(mvpInput));
@@ -336,18 +365,27 @@ client.on('interactionCreate', async interaction => {
             if (interaction.customId.startsWith('modal_bet_')) {
                 const matchId = interaction.customId.replace('modal_bet_', '');
                 const match = memoryDB.matches[matchId];
-                const score = interaction.fields.getTextInputValue('score_input');
-                const mvp = interaction.fields.getTextInputValue('mvp_input');
+                const score = interaction.fields.getTextInputValue('score_input').trim();
+                const mvp = interaction.fields.getTextInputValue('mvp_input').trim();
                 
-                let map1 = 'Brak', map2 = 'Brak';
-                try { map1 = interaction.fields.getTextInputValue('map1_input'); } catch (e) {}
-                try { map2 = interaction.fields.getTextInputValue('map2_input'); } catch (e) {}
+                let map1 = 'Brak', map2 = 'Brak', map3 = 'Brak';
+                try { map1 = interaction.fields.getTextInputValue('map1_input').trim() || 'Brak'; } catch (e) {}
+                try { map2 = interaction.fields.getTextInputValue('map2_input').trim() || 'Brak'; } catch (e) {}
+                try { map3 = interaction.fields.getTextInputValue('map3_input').trim() || 'Brak'; } catch (e) {}
 
                 if (!memoryDB.bets[matchId]) memoryDB.bets[matchId] = {};
-                memoryDB.bets[matchId][interaction.user.id] = { score, map1, map2, mvp, timestamp: new Date().toISOString() };
+                memoryDB.bets[matchId][interaction.user.id] = { score, map1, map2, map3, mvp, timestamp: new Date().toISOString() };
 
                 await saveDB();
-                return interaction.reply({ content: `✅ Zapisano Twój typ na mecz **ID ${matchId}**!`, ephemeral: true });
+
+                let replyMsg = `✅ Zapisano Twój typ na mecz **${match ? match.details : 'ID ' + matchId}**!\n🎯 **Wynik serii:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``;
+                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1 (${match.teamA}):** \`${map1}\``;
+                if (map2 !== 'Brak') replyMsg += `\n🗺️ **Mapa 2 (${match.teamB}):** \`${map2}\``;
+                if (map3 !== 'Brak' && (score === '2:1' || score === '1:2' || score === '2-1' || score === '1-2')) {
+                    replyMsg += `\n🗺️ **Decider (Mapa 3):** \`${map3}\``;
+                }
+
+                return interaction.reply({ content: replyMsg, ephemeral: true });
             }
         }
     } catch (err) {
@@ -359,4 +397,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                                                    
+    
