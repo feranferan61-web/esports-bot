@@ -17,9 +17,7 @@ const http = require('http');
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    ssl: { rejectUnauthorized: false }
 });
 
 let memoryDB = {
@@ -97,7 +95,7 @@ const slashCommands = [
                         { name: 'BO3', value: 'BO3' },
                         { name: 'BO5', value: 'BO5' }
                     ))
-                .addStringOption(opt => opt.setName('data_blokady').setDescription('Data i godzina blokady np. 12-10-2026 12:00').setRequired(false))
+                .addStringOption(opt => opt.setName('data_blokady').setDescription('Data blokady np. 12-10-2026 12:00').setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('zablokuj')
@@ -113,7 +111,7 @@ const slashCommands = [
                 .addStringOption(opt => opt.setName('mvp').setDescription('MVP (Nick)').setRequired(true))
                 .addStringOption(opt => opt.setName('mapa1').setDescription('Wynik Mapy 1').setRequired(false))
                 .addStringOption(opt => opt.setName('mapa2').setDescription('Wynik Mapy 2').setRequired(false))
-                .addStringOption(opt => opt.setName('mapa3').setDescription('Wynik Decidera (Mapa 3)').setRequired(false))
+                .addStringOption(opt => opt.setName('mapa3').setDescription('Wynik Decidera').setRequired(false))
         )
 ].map(cmd => cmd.toJSON());
 
@@ -128,7 +126,6 @@ async function registerSlashCommands() {
     }
 }
 
-// Funkcja parująca datę z formatu "DD-MM-YYYY HH:mm" na obiekt Date
 function parseCustomDate(dateStr) {
     if (!dateStr) return null;
     try {
@@ -141,7 +138,6 @@ function parseCustomDate(dateStr) {
     }
 }
 
-// Pętla sprawdzająca co minutę, czy jakiś mecz powinien zostać zablokowany
 function startAutoLockChecker() {
     setInterval(async () => {
         const now = new Date();
@@ -149,19 +145,16 @@ function startAutoLockChecker() {
 
         for (const [mId, m] of Object.entries(memoryDB.matches)) {
             if (!m.locked && m.lockDate) {
-                const lockTime = new Date(m.lockDate);
-                if (now >= lockTime) {
+                if (now >= new Date(m.lockDate)) {
                     m.locked = true;
                     changed = true;
-                    console.log(`🔒 Automatycznie zablokowano mecz ID ${mId} (${m.details}) o czasie${m.lockDate}`);
+                    console.log(`🔒 Automatycznie zablokowano mecz ID ${mId}`);
                 }
             }
         }
 
-        if (changed) {
-            await saveDB();
-        }
-    }, 60000); // Sprawdza co 60 sekund
+        if (changed) await saveDB();
+    }, 60000);
 }
 
 client.once('ready', async () => {
@@ -178,9 +171,7 @@ client.on('interactionCreate', async interaction => {
 
             if (commandName === 'mecze') {
                 const matchKeys = Object.keys(memoryDB.matches);
-                if (matchKeys.length === 0) {
-                    return interaction.reply({ content: '📌 Brak aktywnych meczów w bazie.', ephemeral: true });
-                }
+                if (matchKeys.length === 0) return interaction.reply({ content: '📌 Brak aktywnych meczów.', ephemeral: true });
 
                 let desc = 'Wybierz mecz do obstawienia:\n\n';
                 const selectOptions = [];
@@ -188,10 +179,7 @@ client.on('interactionCreate', async interaction => {
                 for (const mId of matchKeys) {
                     const m = memoryDB.matches[mId];
                     if (!m || m.locked) continue;
-                    
-                    let lockInfo = m.lockDate ? ` (Blokada: ${m.lockDate})` : '';
-                    desc += `• **ID ${mId}**:${m.details} [${m.format}]${lockInfo}\n`;
-                    
+                    desc += `• **ID ${mId}**: ${m.details} [${m.format}]\n`;
                     selectOptions.push({
                         label: `Mecz ${mId}:${m.details}`.substring(0, 100),
                         description: `Format: ${m.format}`,
@@ -199,9 +187,7 @@ client.on('interactionCreate', async interaction => {
                     });
                 }
 
-                if (selectOptions.length === 0) {
-                    return interaction.reply({ content: '🔒 Wszystkie mecze są zablokowane.', ephemeral: true });
-                }
+                if (selectOptions.length === 0) return interaction.reply({ content: '🔒 Wszystkie mecze są zablokowane.', ephemeral: true });
 
                 const embed = new EmbedBuilder().setTitle('🎮 Centrum Typowania').setDescription(desc).setColor(0xFF6B00);
                 const row = new ActionRowBuilder().addComponents(
@@ -217,35 +203,25 @@ client.on('interactionCreate', async interaction => {
 
                 for (const [mId, bets] of Object.entries(memoryDB.bets || {})) {
                     if (bets[userId]) {
-                        const m = memoryDB.matches[mId] || { details: `Mecz ID ${mId}`, teamA: 'Drużyna A', teamB: 'Drużyna B' };
-                        const userBet = bets[userId];
-                        let details = `• **${m.details}** (ID${mId}):\n  🎯 Wynik serii: \`${userBet.score}\` | ⭐ MVP: \`${userBet.mvp}\``;
-                        
-                        if (userBet.map1 && userBet.map1 !== 'Brak') details += `\n  🗺️ Mapa 1 (${m.teamA}): \`${userBet.map1}\``;
-                        if (userBet.map2 && userBet.map2 !== 'Brak') details += `\n  🗺️ Mapa 2 (${m.teamB}): \`${userBet.map2}\``;
-                        if (userBet.map3 && userBet.map3 !== 'Brak') details += `\n  🗺️ Decider (Mapa 3): \`${userBet.map3}\``;
-                        
-                        userBets.push(details);
+                        const m = memoryDB.matches[mId] || { details: `Mecz ID ${mId}` };
+                        const b = bets[userId];
+                        let info = `• **${m.details}** (ID${mId}):\n  🎯 Wynik: \`${b.score}\` | ⭐ MVP: \`${b.mvp}\``;
+                        if (b.map1 !== 'Brak') info += `\n  🗺️ Mapa 1: \`${b.map1}\``;
+                        if (b.map2 !== 'Brak') info += `\n  🗺️ Mapa 2: \`${b.map2}\``;
+                        if (b.map3 !== 'Brak') info += `\n  🗺️ Decider: \`${b.map3}\``;
+                        userBets.push(info);
                     }
                 }
 
-                if (userBets.length === 0) {
-                    return interaction.reply({ content: '❓ Nie obstawiłeś jeszcze żadnego meczu. Użyj `/mecze`, aby wytypować wyniki!', ephemeral: true });
-                }
+                if (userBets.length === 0) return interaction.reply({ content: '❓ Nie obstawiłeś jeszcze żadnego meczu.', ephemeral: true });
 
-                const embed = new EmbedBuilder()
-                    .setTitle(`🎯 Twoje Wytypowane Mecze — ${interaction.user.username}`)
-                    .setDescription(userBets.join('\n\n'))
-                    .setColor(0x00FFCC);
-
+                const embed = new EmbedBuilder().setTitle(`🎯 Twoje Typy — ${interaction.user.username}`).setDescription(userBets.join('\n\n')).setColor(0x00FFCC);
                 return interaction.reply({ embeds: [embed], ephemeral: true });
             }
 
             if (commandName === 'profil') {
-                const userId = interaction.user.id;
-                const u = memoryDB.users[userId] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+                const u = memoryDB.users[interaction.user.id] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
                 const winRate = u.settledCount > 0 ? Math.round(((u.exactHits + u.winnerHits) / u.settledCount) * 100) : 0;
-
                 const embed = new EmbedBuilder()
                     .setTitle(`📊 Profil: ${interaction.user.username}`)
                     .setColor(0x00FFCC)
@@ -255,7 +231,6 @@ client.on('interactionCreate', async interaction => {
                         { name: '✅ Trafieni Zwycięzcy', value: `**${u.winnerHits}**`, inline: true },
                         { name: '📈 Skuteczność', value: `**${winRate}%**`, inline: true }
                     );
-
                 return interaction.reply({ embeds: [embed] });
             }
 
@@ -270,8 +245,7 @@ client.on('interactionCreate', async interaction => {
                     desc += `${medal} <@${id}> — **${data.points || 0} pkt**\n`;
                 });
 
-                const embed = new EmbedBuilder().setTitle('🏆 Klasyfikacja Generalna').setDescription(desc).setColor(0xFFD700);
-                return interaction.reply({ embeds: [embed] });
+                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏆 Klasyfikacja Generalna').setDescription(desc).setColor(0xFFD700)] });
             }
 
             if (commandName === 'admin') {
@@ -279,73 +253,64 @@ client.on('interactionCreate', async interaction => {
                     return interaction.reply({ content: '❌ Brak uprawnień.', ephemeral: true });
                 }
 
-                const subcommand = options.getSubcommand();
+                const sub = options.getSubcommand();
 
-                if (subcommand === 'dodaj_mecz') {
+                if (sub === 'dodaj_mecz') {
                     const teamA = options.getString('druzyna_a');
                     const teamB = options.getString('druzyna_b');
                     const format = options.getString('format');
-                    const dataBlokadyStr = options.getString('data_blokady');
+                    const lockStr = options.getString('data_blokady');
 
                     let lockDateObj = null;
-                    if (dataBlokadyStr) {
-                        lockDateObj = parseCustomDate(dataBlokadyStr);
+                    if (lockStr) {
+                        lockDateObj = parseCustomDate(lockStr);
                         if (!lockDateObj || isNaN(lockDateObj.getTime())) {
-                            return interaction.reply({ content: '❌ Niepoprawny format daty! Użyj formatu: `DD-MM-YYYY HH:mm` (np. `12-10-2026 12:00`).', ephemeral: true });
+                            return interaction.reply({ content: '❌ Błędny format daty! Użyj: `DD-MM-YYYY HH:mm`', ephemeral: true });
                         }
                     }
 
-                    const matchId = memoryDB.nextMatchId.toString();
+                    const mId = memoryDB.nextMatchId.toString();
                     memoryDB.nextMatchId++;
-                    
-                    memoryDB.matches[matchId] = { 
-                        details: `${teamA} vs${teamB}`, 
-                        teamA, 
-                        teamB, 
-                        format, 
+                    memoryDB.matches[mId] = {
+                        details: `${teamA} vs ${teamB}`,
+                        teamA, teamB, format,
                         locked: false,
                         lockDate: lockDateObj ? lockDateObj.toISOString() : null
                     };
 
                     await saveDB();
-
-                    let msg = `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})`;
-                    if (lockDateObj) msg += `\n⏰ Automatyczna blokada ustawiona na: \`${dataBlokadyStr}\``;
-
-                    return interaction.reply({ content: msg });
+                    return interaction.reply({ content: `✅ Dodano mecz ID **${mId}**: **${teamA} vs ${teamB}** (${format})${lockStr ? ` [Blokada: ${lockStr}]` : ''}` });
                 }
 
-                if (subcommand === 'zablokuj') {
-                    const matchId = options.getInteger('id').toString();
-                    if (!memoryDB.matches[matchId]) return interaction.reply({ content: '❌ Nie znaleziono meczu.', ephemeral: true });
-                    memoryDB.matches[matchId].locked = true;
+                if (sub === 'zablokuj') {
+                    const mId = options.getInteger('id').toString();
+                    if (!memoryDB.matches[mId]) return interaction.reply({ content: '❌ Nie znaleziono meczu.', ephemeral: true });
+                    memoryDB.matches[mId].locked = true;
                     await saveDB();
-                    return interaction.reply({ content: `🔒 Zablokowano mecz ID **${matchId}**.` });
+                    return interaction.reply({ content: `🔒 Zablokowano mecz ID **${mId}**.` });
                 }
 
-                if (subcommand === 'rozlicz') {
-                    const matchId = options.getInteger('id').toString();
-                    const officialScore = options.getString('wynik').trim();
-                    const officialWinner = options.getString('zwyciezca').trim().toLowerCase();
-                    const officialMVP = options.getString('mvp').trim().toLowerCase();
-                    const officialMap1 = (options.getString('mapa1') || '').trim();
-                    const officialMap2 = (options.getString('mapa2') || '').trim();
-                    const officialMap3 = (options.getString('mapa3') || '').trim();
+                if (sub === 'rozlicz') {
+                    const mId = options.getInteger('id').toString();
+                    const sScore = options.getString('wynik').trim();
+                    const sMVP = options.getString('mvp').trim().toLowerCase();
+                    const sM1 = (options.getString('mapa1') || '').trim();
+                    const sM2 = (options.getString('mapa2') || '').trim();
+                    const sM3 = (options.getString('mapa3') || '').trim();
 
-                    const match = memoryDB.matches[matchId];
+                    const match = memoryDB.matches[mId];
                     if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu.', ephemeral: true });
 
                     match.locked = true;
-                    const matchBets = memoryDB.bets[matchId] || {};
-                    let totalPlayers = 0;
+                    let total = 0;
 
-                    for (const [uId, bet] of Object.entries(matchBets)) {
-                        totalPlayers++;
+                    for (const [uId, bet] of Object.entries(memoryDB.bets[mId] || {})) {
+                        total++;
                         if (!memoryDB.users[uId]) memoryDB.users[uId] = { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
                         const u = memoryDB.users[uId];
                         u.settledCount++;
 
-                        if ((bet.score || '').trim() === officialScore) {
+                        if ((bet.score || '').trim() === sScore) {
                             u.points += 3;
                             u.exactHits++;
                         } else {
@@ -353,84 +318,71 @@ client.on('interactionCreate', async interaction => {
                             u.winnerHits++;
                         }
 
-                        if (officialMap1 && (bet.map1 || '').trim() === officialMap1) u.points += 2;
-                        if (officialMap2 && (bet.map2 || '').trim() === officialMap2) u.points += 2;
-                        if (officialMap3 && (bet.map3 || '').trim() === officialMap3) u.points += 2;
-                        if ((bet.mvp || '').trim().toLowerCase() === officialMVP) u.points += 2;
+                        if (sM1 && (bet.map1 || '').trim() === sM1) u.points += 2;
+                        if (sM2 && (bet.map2 || '').trim() === sM2) u.points += 2;
+                        if (sM3 && (bet.map3 || '').trim() === sM3) u.points += 2;
+                        if ((bet.mvp || '').trim().toLowerCase() === sMVP) u.points += 2;
                     }
 
                     await saveDB();
-                    return interaction.reply({ content: `🎉 Rozliczono mecz ID ${matchId}! Przeliczono typy dla ${totalPlayers} graczy.` });
+                    return interaction.reply({ content: `🎉 Rozliczono mecz ID ${mId} dla ${total} graczy!` });
                 }
             }
         }
 
         else if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'select_match_to_bet') {
-                const matchId = interaction.values[0].replace('typ_mecz_', '');
-                const match = memoryDB.matches[matchId];
-                if (!match || match.locked) return interaction.reply({ content: '❌ Mecz niedostępny lub został zablokowany.', ephemeral: true });
+                const mId = interaction.values[0].replace('typ_mecz_', '');
+                const match = memoryDB.matches[mId];
+                if (!match || match.locked) return interaction.reply({ content: '❌ Mecz zablokowany lub niedostępny.', ephemeral: true });
 
-                const modal = new ModalBuilder().setCustomId(`modal_bet_${matchId}`).setTitle(`Typowanie: ${match.details}`);
+                const modal = new ModalBuilder().setCustomId(`modal_bet_${mId}`).setTitle(`Typowanie: ${match.details}`);
+                const scoreInput = new TextInputBuilder().setCustomId('score_input').setLabel('Wynik serii (np. 2:0)').setStyle(TextInputStyle.Short).setRequired(true);
+                const mvpInput = new TextInputBuilder().setCustomId('mvp_input').setLabel('MVP HLTV (Nick)').setStyle(TextInputStyle.Short).setRequired(true);
 
-                const scoreInput = new TextInputBuilder()
-                    .setCustomId('score_input')
-                    .setLabel(`Wynik serii (np. 2:0 lub 2:1)`)
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const mvpInput = new TextInputBuilder()
-                    .setCustomId('mvp_input')
-                    .setLabel('MVP HLTV (Nick)')
-                    .setStyle(TextInputStyle.Short)
-                    .setRequired(true);
-
-                const components = [new ActionRowBuilder().addComponents(scoreInput)];
+                const comps = [new ActionRowBuilder().addComponents(scoreInput)];
 
                 if (match.format === 'BO3' || match.format === 'BO5') {
-                    const map1Input = new TextInputBuilder()
-                        .setCustomId('map1_input')
-                        .setLabel(`Mapa 1 (${match.teamA})`)
-                        .setPlaceholder('np. 13:8')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(false);
-
-                    const map2Input = new TextInputBuilder()
-                        .setCustomId('map2_input')
-                        .setLabel(`Mapa 2 (${match.teamB})`)
-                        .setPlaceholder('np. 10:13')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(false);
-
-                    const map3Input = new TextInputBuilder()
-                        .setCustomId('map3_input')
-                        .setLabel(`Mapa 3 (Decider dla 2:1/1:2)`)
-                        .setPlaceholder('np. 13:11 (puste dla 2:0)')
-                        .setStyle(TextInputStyle.Short)
-                        .setRequired(false);
-
-                    components.push(
-                        new ActionRowBuilder().addComponents(map1Input),
-                        new ActionRowBuilder().addComponents(map2Input),
-                        new ActionRowBuilder().addComponents(map3Input)
-                    );
+                    const m1 = new TextInputBuilder().setCustomId('map1_input').setLabel(`Mapa 1 (${match.teamA})`).setStyle(TextInputStyle.Short).setRequired(false);
+                    const m2 = new TextInputBuilder().setCustomId('map2_input').setLabel(`Mapa 2 (${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(false);
+                    const m3 = new TextInputBuilder().setCustomId('map3_input').setLabel(`Mapa 3 (Decider)`).setStyle(TextInputStyle.Short).setRequired(false);
+                    comps.push(new ActionRowBuilder().addComponents(m1), new ActionRowBuilder().addComponents(m2), new ActionRowBuilder().addComponents(m3));
                 }
 
-                components.push(new ActionRowBuilder().addComponents(mvpInput));
-                modal.addComponents(components);
-
+                comps.push(new ActionRowBuilder().addComponents(mvpInput));
+                modal.addComponents(comps);
                 return await interaction.showModal(modal);
             }
         }
 
         else if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith('modal_bet_')) {
-                const matchId = interaction.customId.replace('modal_bet_', '');
-                const match = memoryDB.matches[matchId];
-                
-                // Sprawdzenie na wypadek, gdyby mecz zablokował się w trakcie wypełniania formularza
-                if (match && match.locked) {
-                    return interaction.reply({ content: '❌ Czas na typowanie tego meczu właśnie minął (mecz został zablokowany).', ephemeral: true });
-                }
+                const mId = interaction.customId.replace('modal_bet_', '');
+                const match = memoryDB.matches[mId];
+                if (match && match.locked) return interaction.reply({ content: '❌ Mecz został już zablokowany.', ephemeral: true });
 
-                const score = interaction.fields.getTe
+                const score = interaction.fields.getTextInputValue('score_input').trim();
+                const mvp = interaction.fields.getTextInputValue('mvp_input').trim();
+                let map1 = 'Brak', map2 = 'Brak', map3 = 'Brak';
+
+                try { map1 = interaction.fields.getTextInputValue('map1_input').trim() || 'Brak'; } catch (e) {}
+                try { map2 = interaction.fields.getTextInputValue('map2_input').trim() || 'Brak'; } catch (e) {}
+                try { map3 = interaction.fields.getTextInputValue('map3_input').trim() || 'Brak'; } catch (e) {}
+
+                if (!memoryDB.bets[mId]) memoryDB.bets[mId] = {};
+                memoryDB.bets[mId][interaction.user.id] = { score, map1, map2, map3, mvp, timestamp: new Date().toISOString() };
+
+                await saveDB();
+                return interaction.reply({ content: `✅ Zapisano typ na mecz ID **${mId}**!`, ephemeral: true });
+            }
+        }
+    } catch (err) {
+        console.error('❌ Błąd obsługi interakcji:', err);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ Wystąpił błąd.', ephemeral: true });
+        }
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN);
+                                                                                                  
