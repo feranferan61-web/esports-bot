@@ -15,10 +15,11 @@ const {
 const { Pool } = require('pg');
 const http = require('http');
 
-// Fix na błąd: self-signed certificate in certificate chain
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
 
 let memoryDB = {
@@ -394,4 +395,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                                 
+                       
