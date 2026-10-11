@@ -312,14 +312,12 @@ client.on('interactionCreate', async interaction => {
                 const scoreInput = new TextInputBuilder()
                     .setCustomId('score_input')
                     .setLabel(`Wynik serii (np. 2:0 lub 2:1)`)
-                    .setPlaceholder('Wpisz wynik ogólny serii')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
                 const mvpInput = new TextInputBuilder()
                     .setCustomId('mvp_input')
-                    .setLabel('MVP HLTV (Nick gracza)')
-                    .setPlaceholder('Wpisz nick zawodnika')
+                    .setLabel('MVP HLTV (Nick)')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
@@ -328,22 +326,22 @@ client.on('interactionCreate', async interaction => {
                 if (match.format === 'BO3' || match.format === 'BO5') {
                     const map1Input = new TextInputBuilder()
                         .setCustomId('map1_input')
-                        .setLabel(`Mapa 1 (Pick: ${match.teamA})`)
+                        .setLabel(`Mapa 1 (${match.teamA})`)
                         .setPlaceholder('np. 13:8')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(false);
 
                     const map2Input = new TextInputBuilder()
                         .setCustomId('map2_input')
-                        .setLabel(`Mapa 2 (Pick: ${match.teamB})`)
+                        .setLabel(`Mapa 2 (${match.teamB})`)
                         .setPlaceholder('np. 10:13')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(false);
 
                     const map3Input = new TextInputBuilder()
                         .setCustomId('map3_input')
-                        .setLabel(`Decider - Mapa 3 (Tylko dla wyników 2:1 / 1:2)`)
-                        .setPlaceholder('np. 13:11 (Zostaw puste dla 2:0 / 0:2)')
+                        .setLabel(`Mapa 3 (Decider dla 2:1/1:2)`)
+                        .setPlaceholder('np. 13:11 (puste dla 2:0)')
                         .setStyle(TextInputStyle.Short)
                         .setRequired(false);
 
@@ -379,11 +377,9 @@ client.on('interactionCreate', async interaction => {
                 await saveDB();
 
                 let replyMsg = `✅ Zapisano Twój typ na mecz **${match ? match.details : 'ID ' + matchId}**!\n🎯 **Wynik serii:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``;
-                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1 (${match.teamA}):** \`${map1}\``;
-                if (map2 !== 'Brak') replyMsg += `\n🗺️ **Mapa 2 (${match.teamB}):** \`${map2}\``;
-                if (map3 !== 'Brak' && (score === '2:1' || score === '1:2' || score === '2-1' || score === '1-2')) {
-                    replyMsg += `\n🗺️ **Decider (Mapa 3):** \`${map3}\``;
-                }
+                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1:** \`${map1}\``;
+                if (map2 !== 'Brak') replyMsg += `\n🗺️ **Mapa 2:** \`${map2}\``;
+                if (map3 !== 'Brak') replyMsg += `\n🗺️ **Decider (Mapa 3):** \`${map3}\``;
 
                 return interaction.reply({ content: replyMsg, ephemeral: true });
             }
@@ -397,4 +393,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-    
+                                 
