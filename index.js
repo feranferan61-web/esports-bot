@@ -21,7 +21,6 @@ const pool = new Pool({
     ssl: { rejectUnauthorized: false }
 });
 
-// Pamięć podręczna bota (Cache w RAM)
 let memoryDB = {
     matches: {},
     users: {},
@@ -119,6 +118,16 @@ const slashCommands = [
             sub.setName('zablokuj')
                 .setDescription('Zablokuj typowanie meczu')
                 .addIntegerOption(opt => opt.setName('id').setDescription('ID Meczu').setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('rozlicz')
+                .setDescription('Rozlicz oficjalne wyniki meczu i przyznaj punkty')
+                .addIntegerOption(opt => opt.setName('id').setDescription('ID Meczu').setRequired(true))
+                .addStringOption(opt => opt.setName('wynik').setDescription('Dokładny wynik serii (np. 2:1)').setRequired(true))
+                .addStringOption(opt => opt.setName('zwyciezca').setDescription('Nazwa wygranej drużyny').setRequired(true))
+                .addStringOption(opt => opt.setName('mvp').setDescription('Oficjalny MVP meczu (Nick zawodnika)').setRequired(true))
+                .addStringOption(opt => opt.setName('mapa1').setDescription('Oficjalny wynik Mapy 1 (np. 13:8)').setRequired(false))
+                .addStringOption(opt => opt.setName('mapa2').setDescription('Oficjalny wynik Mapy 2 (np. 10:13)').setRequired(false))
         )
 ].map(cmd => cmd.toJSON());
 
@@ -276,6 +285,84 @@ client.on('interactionCreate', async interaction => {
                     await saveDB();
                     return interaction.reply({ content: `🔒 Zablokowano typowanie dla meczu ID **${matchId}**.` });
                 }
+
+                // SUBCOMMAND: /admin rozlicz
+                if (subcommand === 'rozlicz') {
+                    const matchId = options.getInteger('id').toString();
+                    const officialScore = options.getString('wynik').trim();
+                    const officialWinner = options.getString('zwyciezca').trim().toLowerCase();
+                    const officialMVP = options.getString('mvp').trim().toLowerCase();
+                    const officialMap1 = (options.getString('mapa1') || '').trim();
+                    const officialMap2 = (options.getString('mapa2') || '').trim();
+
+                    const match = memoryDB.matches[matchId];
+                    if (!match) {
+                        return interaction.reply({ content: '❌ Nie znaleziono meczu o podanym ID.', ephemeral: true });
+                    }
+
+                    match.locked = true;
+                    const matchBets = memoryDB.bets[matchId] || {};
+                    let totalPlayers = 0;
+
+                    for (const [uId, bet] of Object.entries(matchBets)) {
+                        totalPlayers++;
+                        if (!memoryDB.users[uId]) {
+                            memoryDB.users[uId] = { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+                        }
+
+                        const u = memoryDB.users[uId];
+                        u.settledCount++;
+
+                        const userScore = (bet.score || '').trim();
+                        const userMVP = (bet.mvp || '').trim().toLowerCase();
+                        const userMap1 = (bet.map1 || '').trim();
+                        const userMap2 = (bet.map2 || '').trim();
+
+                        // 1. Ogólny wynik serii
+                        if (userScore === officialScore) {
+                            u.points += 3;
+                            u.exactHits++;
+                        } else {
+                            u.points += 1;
+                            u.winnerHits++;
+                        }
+
+                        // 2. Trafienie dokładnego wyniku Mapy 1 (+2 pkt)
+                        if (officialMap1 && userMap1 === officialMap1) {
+                            u.points += 2;
+                        }
+
+                        // 3. Trafienie dokładnego wyniku Mapy 2 (+2 pkt)
+                        if (officialMap2 && userMap2 === officialMap2) {
+                            u.points += 2;
+                        }
+
+                        // 4. Trafiony MVP (+2 pkt)
+                        if (userMVP === officialMVP) {
+                            u.points += 2;
+                        }
+                    }
+
+                    await saveDB();
+
+                    let mapDetails = '';
+                    if (officialMap1) mapDetails += `\n🗺️ **Mapa 1 (${match.teamA}):** \`${officialMap1}\``;
+                    if (officialMap2) mapDetails += `\n🗺️ **Mapa 2 (${match.teamB}):** \`${officialMap2}\``;
+
+                    const embed = new EmbedBuilder()
+                        .setTitle(`🎉 Rozliczono Mecz ID ${matchId}:${match.details}`)
+                        .setColor(0x00FF00)
+                        .setDescription(`Official score set and points updated!${mapDetails}`)
+                        .addFields(
+                            { name: '🎯 Wynik Serii', value: `\`${officialScore}\``, inline: true },
+                            { name: '🏆 Zwycięzca', value: `\`${officialWinner.toUpperCase()}\``, inline: true },
+                            { name: '⭐ MVP HLTV', value: `\`${officialMVP.toUpperCase()}\``, inline: true },
+                            { name: '👥 Rozliczeni Gracze', value: `**${totalPlayers}**`, inline: false }
+                        )
+                        .setFooter({ text: 'Punkty zostały automatycznie zaktualizowane w klasyfikacji generalnej!' });
+
+                    return interaction.reply({ embeds: [embed] });
+                }
             }
         }
 
@@ -296,8 +383,8 @@ client.on('interactionCreate', async interaction => {
 
                 const scoreInput = new TextInputBuilder()
                     .setCustomId('score_input')
-                    .setLabel('Wynik serii (np. 2:0 lub 2:1)')
-                    .setPlaceholder('Wpisz np. 2:1')
+                    .setLabel(`Wynik meczu (np. ${match.format === 'BO1' ? '13:9' : '2:1'})`)
+                    .setPlaceholder('Wpisz wynik ogólny')
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
@@ -308,46 +395,63 @@ client.on('interactionCreate', async interaction => {
                     .setStyle(TextInputStyle.Short)
                     .setRequired(true);
 
-                modal.addComponents(
-                    new ActionRowBuilder().addComponents(scoreInput),
-                    new ActionRowBuilder().addComponents(mvpInput)
-                );
+                const components = [new ActionRowBuilder().addComponents(scoreInput)];
+
+                if (match.format === 'BO3' || match.format === 'BO5') {
+                    const map1Input = new TextInputBuilder()
+                        .setCustomId('map1_input')
+                        .setLabel(`Mapa 1 (Pick: ${match.teamA})`)
+                        .setPlaceholder('np. 13:8')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(false);
+
+                    const map2Input = new TextInputBuilder()
+                        .setCustomId('map2_input')
+                        .setLabel(`Mapa 2 (Pick: ${match.teamB})`)
+                        .setPlaceholder('np. 10:13')
+                        .setStyle(TextInputStyle.Short)
+                        .setRequired(false);
+
+                    components.push(
+                        new ActionRowBuilder().addComponents(map1Input),
+                        new ActionRowBuilder().addComponents(map2Input)
+                    );
+                }
+
+                components.push(new ActionRowBuilder().addComponents(mvpInput));
+                modal.addComponents(components);
 
                 return await interaction.showModal(modal);
             }
         }
 
-        // C. OBSŁUGA FORMULARZA
+        // C. OBSŁUGA FORMULARZA (MODAL)
         else if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith('modal_bet_')) {
                 const matchId = interaction.customId.replace('modal_bet_', '');
+                const match = memoryDB.matches[matchId];
                 const score = interaction.fields.getTextInputValue('score_input');
                 const mvp = interaction.fields.getTextInputValue('mvp_input');
+                
+                let map1 = 'Brak';
+                let map2 = 'Brak';
+
+                try { map1 = interaction.fields.getTextInputValue('map1_input'); } catch (e) {}
+                try { map2 = interaction.fields.getTextInputValue('map2_input'); } catch (e) {}
+
                 const userId = interaction.user.id;
 
                 if (!memoryDB.bets[matchId]) memoryDB.bets[matchId] = {};
 
                 memoryDB.bets[matchId][userId] = {
                     score,
+                    map1,
+                    map2,
                     mvp,
                     timestamp: new Date().toISOString()
                 };
 
                 await saveDB();
 
-                return interaction.reply({ 
-                    content: `✅ Zapisano Twój typ na mecz **ID ${matchId}**!\n🎯 **Wynik:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``, 
-                    ephemeral: true 
-                });
-            }
-        }
-    } catch (err) {
-        console.error('❌ Błąd obsługi interakcji:', err);
-        if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ Wystąpił błąd podczas przetwarzania żądania.', ephemeral: true });
-        }
-    }
-});
-
-client.login(process.env.DISCORD_TOKEN);
-                                                     
+                let replyMsg = `✅ Zapisano Twój typ na mecz **${match ? match.details : 'ID ' + matchId}**!\n🎯 **Wynik serii:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``;
+                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1 (${match.teamA})
