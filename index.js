@@ -15,7 +15,7 @@ const {
 const { Pool } = require('pg');
 const http = require('http');
 
-// --- 1. PANCERNA OBSŁUGA BAZY DANYCH (POOL + LOCAL CACHE) ---
+// --- 1. PANCERNA OBSŁUGA BAZY DANYCH ---
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
@@ -51,7 +51,7 @@ async function initDB() {
                 nextMatchId: loaded.nextMatchId || 1
             };
         }
-        console.log('✅ Baza danych zainicjalizowana pomyślnie i załadowana do pamięci!');
+        console.log('✅ Baza danych zainicjalizowana pomyślnie!');
     } catch (err) {
         console.error('❌ Błąd inicjalizacji bazy danych:', err);
     }
@@ -149,7 +149,7 @@ async function registerSlashCommands() {
     }
 }
 
-// --- 5. OBSŁUGA ZDARZEŃ (EVENTS) ---
+// --- 5. OBSŁUGA ZDARZEŃ ---
 client.once('ready', async () => {
     await initDB();
     console.log(`🤖 Zalogowano jako ${client.user.tag}! Bot gotowy do PGL Major Singapur 2026.`);
@@ -158,11 +158,10 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
     try {
-        // A. OBSŁUGA KOMEND SLASH ( / )
+        // A. OBSŁUGA KOMEND SLASH
         if (interaction.isChatInputCommand()) {
             const { commandName, options } = interaction;
 
-            // /mecze
             if (commandName === 'mecze') {
                 const matchKeys = Object.keys(memoryDB.matches);
                 if (matchKeys.length === 0) {
@@ -203,7 +202,6 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ embeds: [embed], components: [row] });
             }
 
-            // /profil
             if (commandName === 'profil') {
                 const userId = interaction.user.id;
                 const userData = memoryDB.users[userId] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
@@ -223,7 +221,6 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ embeds: [embed] });
             }
 
-            // /ranking
             if (commandName === 'ranking') {
                 const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
                 if (sorted.length === 0) {
@@ -247,7 +244,6 @@ client.on('interactionCreate', async interaction => {
                 return interaction.reply({ embeds: [embed] });
             }
 
-            // /admin
             if (commandName === 'admin') {
                 if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
                     return interaction.reply({ content: '❌ Brak uprawnień do komend administratora.', ephemeral: true });
@@ -286,7 +282,6 @@ client.on('interactionCreate', async interaction => {
                     return interaction.reply({ content: `🔒 Zablokowano typowanie dla meczu ID **${matchId}**.` });
                 }
 
-                // SUBCOMMAND: /admin rozlicz
                 if (subcommand === 'rozlicz') {
                     const matchId = options.getInteger('id').toString();
                     const officialScore = options.getString('wynik').trim();
@@ -318,7 +313,6 @@ client.on('interactionCreate', async interaction => {
                         const userMap1 = (bet.map1 || '').trim();
                         const userMap2 = (bet.map2 || '').trim();
 
-                        // 1. Ogólny wynik serii
                         if (userScore === officialScore) {
                             u.points += 3;
                             u.exactHits++;
@@ -327,17 +321,14 @@ client.on('interactionCreate', async interaction => {
                             u.winnerHits++;
                         }
 
-                        // 2. Trafienie dokładnego wyniku Mapy 1 (+2 pkt)
                         if (officialMap1 && userMap1 === officialMap1) {
                             u.points += 2;
                         }
 
-                        // 3. Trafienie dokładnego wyniku Mapy 2 (+2 pkt)
                         if (officialMap2 && userMap2 === officialMap2) {
                             u.points += 2;
                         }
 
-                        // 4. Trafiony MVP (+2 pkt)
                         if (userMVP === officialMVP) {
                             u.points += 2;
                         }
@@ -352,7 +343,7 @@ client.on('interactionCreate', async interaction => {
                     const embed = new EmbedBuilder()
                         .setTitle(`🎉 Rozliczono Mecz ID ${matchId}:${match.details}`)
                         .setColor(0x00FF00)
-                        .setDescription(`Official score set and points updated!${mapDetails}`)
+                        .setDescription(`Oficjalne wyniki i punkty zostały zaktualizowane!${mapDetails}`)
                         .addFields(
                             { name: '🎯 Wynik Serii', value: `\`${officialScore}\``, inline: true },
                             { name: '🏆 Zwycięzca', value: `\`${officialWinner.toUpperCase()}\``, inline: true },
@@ -366,7 +357,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // B. OBSŁUGA WYBORU Z LISTY ROZWIJANEJ
+        // B. OBSŁUGA SELECT MENU
         else if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'select_match_to_bet') {
                 const selectedValue = interaction.values[0];
@@ -425,7 +416,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // C. OBSŁUGA FORMULARZA (MODAL)
+        // C. OBSŁUGA FORMULARZY (MODAL)
         else if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith('modal_bet_')) {
                 const matchId = interaction.customId.replace('modal_bet_', '');
@@ -454,4 +445,13 @@ client.on('interactionCreate', async interaction => {
                 await saveDB();
 
                 let replyMsg = `✅ Zapisano Twój typ na mecz **${match ? match.details : 'ID ' + matchId}**!\n🎯 **Wynik serii:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``;
-                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1 (${match.teamA})
+                if (map1 !== 'Brak') replyMsg += `\n🗺️ **Mapa 1 (${match.teamA}):** \`${map1}\``;
+                if (map2 !== 'Brak') replyMsg += `\n🗺️ **Mapa 2 (${match.teamB}):** \`${map2}\``;
+
+                return interaction.reply({ content: replyMsg, ephemeral: true });
+            }
+        }
+    } catch (err) {
+        console.error('❌ Błąd obsługi interakcji:', err);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: '❌ Wystąpił błąd podczas przetwarzania 
