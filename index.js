@@ -78,6 +78,7 @@ const client = new Client({
 
 const slashCommands = [
     new SlashCommandBuilder().setName('mecze').setDescription('Wyświetla listę meczów do typowania'),
+    new SlashCommandBuilder().setName('moje_typy').setDescription('🎯 Wyświetla Twoje obstawione mecze i typy'),
     new SlashCommandBuilder().setName('profil').setDescription('Twój profil i statystyki'),
     new SlashCommandBuilder().setName('ranking').setDescription('Tabela liderów turnieju'),
     new SlashCommandBuilder()
@@ -148,7 +149,7 @@ client.on('interactionCreate', async interaction => {
                     if (!m || m.locked) continue;
                     desc += `• **ID ${mId}**: ${m.details} [${m.format}]\n`;
                     selectOptions.push({
-                        label: `Mecz ${mId}: ${m.details}`.substring(0, 100),
+                        label: `Mecz ${mId}:${m.details}`.substring(0, 100),
                         description: `Format: ${m.format}`,
                         value: `typ_mecz_${mId}`
                     });
@@ -164,6 +165,35 @@ client.on('interactionCreate', async interaction => {
                 );
 
                 return interaction.reply({ embeds: [embed], components: [row] });
+            }
+
+            if (commandName === 'moje_typy') {
+                const userId = interaction.user.id;
+                const userBets = [];
+
+                for (const [mId, bets] of Object.entries(memoryDB.bets || {})) {
+                    if (bets[userId]) {
+                        const m = memoryDB.matches[mId] || { details: `Mecz ID ${mId}`, teamA: 'Drużyna A', teamB: 'Drużyna B' };
+                        const userBet = bets[userId];
+                        let details = `• **${m.details}** (ID${mId}):\n  🎯 Wynik: \`${userBet.score}\` | ⭐ MVP: \`${userBet.mvp}\``;
+                        
+                        if (userBet.map1 && userBet.map1 !== 'Brak') details += `\n  🗺️ Mapa 1 (${m.teamA}): \`${userBet.map1}\``;
+                        if (userBet.map2 && userBet.map2 !== 'Brak') details += `\n  🗺️ Mapa 2 (${m.teamB}): \`${userBet.map2}\``;
+                        
+                        userBets.push(details);
+                    }
+                }
+
+                if (userBets.length === 0) {
+                    return interaction.reply({ content: '❓ Nie obstawiłeś jeszcze żadnego meczu. Użyj `/mecze`, aby wytypować wyniki!', ephemeral: true });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setTitle(`🎯 Twoje Wytypowane Mecze — ${interaction.user.username}`)
+                    .setDescription(userBets.join('\n\n'))
+                    .setColor(0x00FFCC);
+
+                return interaction.reply({ embeds: [embed], ephemeral: true });
             }
 
             if (commandName === 'profil') {
