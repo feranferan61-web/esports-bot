@@ -15,11 +15,20 @@ const {
 const { Pool } = require('pg');
 const http = require('http');
 
-// --- 1. PANCERNA OBSŁUGA BAZY DANYCH (POOL) ---
+// --- 1. PANCERNA OBSŁUGA BAZY DANYCH (POOL + LOCAL CACHE) ---
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: { rejectUnauthorized: false }
 });
+
+// Pamięć podręczna bota (Cache w RAM)
+let memoryDB = {
+    matches: {},
+    users: {},
+    bets: {},
+    settings: { locked: false },
+    nextMatchId: 1
+};
 
 async function initDB() {
     try {
@@ -32,43 +41,28 @@ async function initDB() {
         
         const res = await pool.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
         if (res.rows.length === 0) {
-            const initialData = { 
-                matches: {}, 
-                users: {}, 
-                bets: {},
-                settings: { locked: false }, 
-                nextMatchId: 1 
+            await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2)', ['main_db', JSON.stringify(memoryDB)]);
+        } else {
+            const loaded = res.rows[0].value;
+            memoryDB = {
+                matches: loaded.matches || {},
+                users: loaded.users || {},
+                bets: loaded.bets || {},
+                settings: loaded.settings || { locked: false },
+                nextMatchId: loaded.nextMatchId || 1
             };
-            await pool.query('INSERT INTO kv_store (key, value) VALUES ($1, $2)', ['main_db', JSON.stringify(initialData)]);
         }
-        console.log('✅ Baza danych zainicjalizowana pomyślnie!');
+        console.log('✅ Baza danych zainicjalizowana pomyślnie i załadowana do pamięci!');
     } catch (err) {
         console.error('❌ Błąd inicjalizacji bazy danych:', err);
     }
 }
 
-async function loadDB() {
-    try {
-        const res = await pool.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
-        if (res.rows.length > 0) {
-            const data = res.rows[0].value;
-            if (!data.matches) data.matches = {};
-            if (!data.users) data.users = {};
-            if (!data.bets) data.bets = {};
-            if (!data.nextMatchId) data.nextMatchId = 1;
-            return data;
-        }
-    } catch (err) {
-        console.error('❌ Błąd ładowania bazy:', err);
-    }
-    return { matches: {}, users: {}, bets: {}, settings: { locked: false }, nextMatchId: 1 };
-}
-
-async function saveDB(data) {
+async function saveDB() {
     try {
         await pool.query(
             'INSERT INTO kv_store (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2',
-            ['main_db', JSON.stringify(data)]
+            ['main_db', JSON.stringify(memoryDB)]
         );
     } catch (err) {
         console.error('❌ Błąd zapisu bazy:', err);
@@ -155,15 +149,13 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
     try {
-        const database = await loadDB();
-
         // A. OBSŁUGA KOMEND SLASH ( / )
         if (interaction.isChatInputCommand()) {
             const { commandName, options } = interaction;
 
             // /mecze
             if (commandName === 'mecze') {
-                const matchKeys = Object.keys(database.matches || {});
+                const matchKeys = Object.keys(memoryDB.matches);
                 if (matchKeys.length === 0) {
                     return interaction.reply({ content: '📌 Brak aktywnych meczów w bazie. Administrator musi najpierw dodać mecz komendą `/admin dodaj_mecz`.', ephemeral: true });
                 }
@@ -172,7 +164,7 @@ client.on('interactionCreate', async interaction => {
                 const selectOptions = [];
 
                 for (const mId of matchKeys) {
-                    const m = database.matches[mId];
+                    const m = memoryDB.matches[mId];
                     if (!m || m.locked) continue;
                     
                     desc += `• **ID ${mId}**: ${m.details} [${m.format}]\n`;
@@ -205,7 +197,7 @@ client.on('interactionCreate', async interaction => {
             // /profil
             if (commandName === 'profil') {
                 const userId = interaction.user.id;
-                const userData = database.users[userId] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+                const userData = memoryDB.users[userId] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
                 const winRate = userData.settledCount > 0 ? Math.round(((userData.exactHits + userData.winnerHits) / userData.settledCount) * 100) : 0;
 
                 const embed = new EmbedBuilder()
@@ -224,7 +216,7 @@ client.on('interactionCreate', async interaction => {
 
             // /ranking
             if (commandName === 'ranking') {
-                const sorted = Object.entries(database.users || {}).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
+                const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
                 if (sorted.length === 0) {
                     return interaction.reply({ content: '🏆 Tabela rankingowa jest pusta.', ephemeral: true });
                 }
@@ -259,12 +251,10 @@ client.on('interactionCreate', async interaction => {
                     const teamB = options.getString('druzyna_b');
                     const format = options.getString('format');
 
-                    const matchId = (database.nextMatchId || 1).toString();
-                    database.nextMatchId = (database.nextMatchId || 1) + 1;
+                    const matchId = memoryDB.nextMatchId.toString();
+                    memoryDB.nextMatchId++;
 
-                    if (!database.matches) database.matches = {};
-
-                    database.matches[matchId] = {
+                    memoryDB.matches[matchId] = {
                         details: `${teamA} vs${teamB}`,
                         teamA,
                         teamB,
@@ -272,18 +262,18 @@ client.on('interactionCreate', async interaction => {
                         locked: false
                     };
 
-                    await saveDB(database);
+                    await saveDB();
                     return interaction.reply({ content: `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})` });
                 }
 
                 if (subcommand === 'zablokuj') {
                     const matchId = options.getInteger('id').toString();
-                    if (!database.matches || !database.matches[matchId]) {
+                    if (!memoryDB.matches[matchId]) {
                         return interaction.reply({ content: '❌ Nie znaleziono meczu o podanym ID.', ephemeral: true });
                     }
 
-                    database.matches[matchId].locked = true;
-                    await saveDB(database);
+                    memoryDB.matches[matchId].locked = true;
+                    await saveDB();
                     return interaction.reply({ content: `🔒 Zablokowano typowanie dla meczu ID **${matchId}**.` });
                 }
             }
@@ -294,7 +284,7 @@ client.on('interactionCreate', async interaction => {
             if (interaction.customId === 'select_match_to_bet') {
                 const selectedValue = interaction.values[0];
                 const matchId = selectedValue.replace('typ_mecz_', '');
-                const match = database.matches ? database.matches[matchId] : null;
+                const match = memoryDB.matches[matchId];
 
                 if (!match || match.locked) {
                     return interaction.reply({ content: '❌ Ten mecz jest niedostępny lub został zablokowany.', ephemeral: true });
@@ -335,16 +325,15 @@ client.on('interactionCreate', async interaction => {
                 const mvp = interaction.fields.getTextInputValue('mvp_input');
                 const userId = interaction.user.id;
 
-                if (!database.bets) database.bets = {};
-                if (!database.bets[matchId]) database.bets[matchId] = {};
+                if (!memoryDB.bets[matchId]) memoryDB.bets[matchId] = {};
 
-                database.bets[matchId][userId] = {
+                memoryDB.bets[matchId][userId] = {
                     score,
                     mvp,
                     timestamp: new Date().toISOString()
                 };
 
-                await saveDB(database);
+                await saveDB();
 
                 return interaction.reply({ 
                     content: `✅ Zapisano Twój typ na mecz **ID ${matchId}**!\n🎯 **Wynik:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``, 
@@ -361,3 +350,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+                                                     
