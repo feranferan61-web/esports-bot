@@ -35,6 +35,7 @@ async function initDB() {
             const initialData = { 
                 matches: {}, 
                 users: {}, 
+                bets: {},
                 settings: { locked: false }, 
                 nextMatchId: 1 
             };
@@ -49,11 +50,18 @@ async function initDB() {
 async function loadDB() {
     try {
         const res = await pool.query('SELECT value FROM kv_store WHERE key = $1', ['main_db']);
-        if (res.rows.length > 0) return res.rows[0].value;
+        if (res.rows.length > 0) {
+            const data = res.rows[0].value;
+            if (!data.matches) data.matches = {};
+            if (!data.users) data.users = {};
+            if (!data.bets) data.bets = {};
+            if (!data.nextMatchId) data.nextMatchId = 1;
+            return data;
+        }
     } catch (err) {
         console.error('❌ Błąd ładowania bazy:', err);
     }
-    return { matches: {}, users: {}, settings: { locked: false }, nextMatchId: 1 };
+    return { matches: {}, users: {}, bets: {}, settings: { locked: false }, nextMatchId: 1 };
 }
 
 async function saveDB(data) {
@@ -153,9 +161,9 @@ client.on('interactionCreate', async interaction => {
         if (interaction.isChatInputCommand()) {
             const { commandName, options } = interaction;
 
-            // /mecze - Wyświetla listę z menu rozwijanym
+            // /mecze
             if (commandName === 'mecze') {
-                const matchKeys = Object.keys(database.matches);
+                const matchKeys = Object.keys(database.matches || {});
                 if (matchKeys.length === 0) {
                     return interaction.reply({ content: '📌 Brak aktywnych meczów w bazie. Administrator musi najpierw dodać mecz komendą `/admin dodaj_mecz`.', ephemeral: true });
                 }
@@ -165,7 +173,7 @@ client.on('interactionCreate', async interaction => {
 
                 for (const mId of matchKeys) {
                     const m = database.matches[mId];
-                    if (m.locked) continue; // pomijamy zablokowane mecze
+                    if (!m || m.locked) continue;
                     
                     desc += `• **ID ${mId}**: ${m.details} [${m.format}]\n`;
                     selectOptions.push({
@@ -216,7 +224,7 @@ client.on('interactionCreate', async interaction => {
 
             // /ranking
             if (commandName === 'ranking') {
-                const sorted = Object.entries(database.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
+                const sorted = Object.entries(database.users || {}).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
                 if (sorted.length === 0) {
                     return interaction.reply({ content: '🏆 Tabela rankingowa jest pusta.', ephemeral: true });
                 }
@@ -251,8 +259,10 @@ client.on('interactionCreate', async interaction => {
                     const teamB = options.getString('druzyna_b');
                     const format = options.getString('format');
 
-                    const matchId = database.nextMatchId.toString();
-                    database.nextMatchId++;
+                    const matchId = (database.nextMatchId || 1).toString();
+                    database.nextMatchId = (database.nextMatchId || 1) + 1;
+
+                    if (!database.matches) database.matches = {};
 
                     database.matches[matchId] = {
                         details: `${teamA} vs${teamB}`,
@@ -268,7 +278,7 @@ client.on('interactionCreate', async interaction => {
 
                 if (subcommand === 'zablokuj') {
                     const matchId = options.getInteger('id').toString();
-                    if (!database.matches[matchId]) {
+                    if (!database.matches || !database.matches[matchId]) {
                         return interaction.reply({ content: '❌ Nie znaleziono meczu o podanym ID.', ephemeral: true });
                     }
 
@@ -279,18 +289,17 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // B. OBSŁUGA WYBORU Z LISTY ROZWIJANEJ (SELECT MENU)
+        // B. OBSŁUGA WYBORU Z LISTY ROZWIJANEJ
         else if (interaction.isStringSelectMenu()) {
             if (interaction.customId === 'select_match_to_bet') {
-                const selectedValue = interaction.values[0]; // np. "typ_mecz_1"
+                const selectedValue = interaction.values[0];
                 const matchId = selectedValue.replace('typ_mecz_', '');
-                const match = database.matches[matchId];
+                const match = database.matches ? database.matches[matchId] : null;
 
                 if (!match || match.locked) {
                     return interaction.reply({ content: '❌ Ten mecz jest niedostępny lub został zablokowany.', ephemeral: true });
                 }
 
-                // Otwieramy okienko (Modal) z typowaniem
                 const modal = new ModalBuilder()
                     .setCustomId(`modal_bet_${matchId}`)
                     .setTitle(`Typowanie: ${match.details} (${match.format})`);
@@ -318,7 +327,7 @@ client.on('interactionCreate', async interaction => {
             }
         }
 
-        // C. OBSŁUGA WYSŁANEGO FORMULARZA (MODAL SUBMIT)
+        // C. OBSŁUGA FORMULARZA
         else if (interaction.isModalSubmit()) {
             if (interaction.customId.startsWith('modal_bet_')) {
                 const matchId = interaction.customId.replace('modal_bet_', '');
@@ -329,7 +338,6 @@ client.on('interactionCreate', async interaction => {
                 if (!database.bets) database.bets = {};
                 if (!database.bets[matchId]) database.bets[matchId] = {};
 
-                // Zapisujemy typ użytkownika
                 database.bets[matchId][userId] = {
                     score,
                     mvp,
@@ -353,4 +361,3 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                 
