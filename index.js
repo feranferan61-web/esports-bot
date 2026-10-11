@@ -2,6 +2,11 @@ const {
     Client, 
     GatewayIntentBits, 
     EmbedBuilder, 
+    ActionRowBuilder, 
+    StringSelectMenuBuilder, 
+    ModalBuilder, 
+    TextInputBuilder, 
+    TextInputStyle, 
     REST, 
     Routes, 
     SlashCommandBuilder, 
@@ -83,7 +88,7 @@ const client = new Client({
 const slashCommands = [
     new SlashCommandBuilder()
         .setName('mecze')
-        .setDescription('📋 Lista aktywnych meczów PGL Major Singapur 2026'),
+        .setDescription('📋 Wyświetla listę meczów i pozwala wybrać mecz do typowania'),
 
     new SlashCommandBuilder()
         .setName('profil')
@@ -141,125 +146,211 @@ client.once('ready', async () => {
 });
 
 client.on('interactionCreate', async interaction => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const { commandName, options } = interaction;
-
     try {
         const database = await loadDB();
 
-        // /mecze
-        if (commandName === 'mecze') {
-            const matchKeys = Object.keys(database.matches);
-            if (matchKeys.length === 0) {
-                return interaction.reply({ content: '📌 Brak aktywnych meczów w bazie.', ephemeral: true });
+        // A. OBSŁUGA KOMEND SLASH ( / )
+        if (interaction.isChatInputCommand()) {
+            const { commandName, options } = interaction;
+
+            // /mecze - Wyświetla listę z menu rozwijanym
+            if (commandName === 'mecze') {
+                const matchKeys = Object.keys(database.matches);
+                if (matchKeys.length === 0) {
+                    return interaction.reply({ content: '📌 Brak aktywnych meczów w bazie. Administrator musi najpierw dodać mecz komendą `/admin dodaj_mecz`.', ephemeral: true });
+                }
+
+                let desc = 'Wybierz z poniższej listy mecz, który chcesz obstawić:\n\n';
+                const selectOptions = [];
+
+                for (const mId of matchKeys) {
+                    const m = database.matches[mId];
+                    if (m.locked) continue; // pomijamy zablokowane mecze
+                    
+                    desc += `• **ID ${mId}**: ${m.details} [${m.format}]\n`;
+                    selectOptions.push({
+                        label: `Mecz ${mId}:${m.details}`.substring(0, 100),
+                        description: `Format: ${m.format} — Kliknij, aby wytypować`,
+                        value: `typ_mecz_${mId}`
+                    });
+                }
+
+                if (selectOptions.length === 0) {
+                    return interaction.reply({ content: '🔒 Wszystkie aktywne mecze zostały obecnie zablokowane do typowania.', ephemeral: true });
+                }
+
+                const embed = new EmbedBuilder()
+                    .setTitle('🎮 PGL Major Singapur 2026 — Centrum Typowania')
+                    .setDescription(desc)
+                    .setColor(0xFF6B00);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new StringSelectMenuBuilder()
+                        .setCustomId('select_match_to_bet')
+                        .setPlaceholder('Wybierz mecz do obstawienia...')
+                        .addOptions(selectOptions)
+                );
+
+                return interaction.reply({ embeds: [embed], components: [row] });
             }
 
-            let desc = '';
-            for (const mId of matchKeys) {
-                const m = database.matches[mId];
-                const status = m.locked ? '🔒 Zamknięty' : '🟢 Otwarty';
-                desc += `• **ID ${mId}**: ${m.details} [${m.format || 'BO3'}] — ${status}\n`;
+            // /profil
+            if (commandName === 'profil') {
+                const userId = interaction.user.id;
+                const userData = database.users[userId] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
+                const winRate = userData.settledCount > 0 ? Math.round(((userData.exactHits + userData.winnerHits) / userData.settledCount) * 100) : 0;
+
+                const embed = new EmbedBuilder()
+                    .setTitle(`📊 Profil Gracza: ${interaction.user.username}`)
+                    .setColor(0x00FFCC)
+                    .addFields(
+                        { name: '🏆 Punkty', value: `**${userData.points || 0} pkt**`, inline: true },
+                        { name: '🎯 Dokładne Wyniki', value: `**${userData.exactHits || 0}**`, inline: true },
+                        { name: '✅ Trafieni Zwycięzcy', value: `**${userData.winnerHits || 0}**`, inline: true },
+                        { name: '📈 Skuteczność', value: `**${winRate}%**`, inline: true }
+                    )
+                    .setThumbnail(interaction.user.displayAvatarURL());
+
+                return interaction.reply({ embeds: [embed] });
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle('🎮 PGL Major Singapur 2026 — Aktywne Mecze')
-                .setDescription(desc)
-                .setColor(0xFF6B00);
+            // /ranking
+            if (commandName === 'ranking') {
+                const sorted = Object.entries(database.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
+                if (sorted.length === 0) {
+                    return interaction.reply({ content: '🏆 Tabela rankingowa jest pusta.', ephemeral: true });
+                }
 
-            return interaction.reply({ embeds: [embed] });
+                let desc = '';
+                sorted.forEach(([id, data], i) => {
+                    let medal = `${i + 1}.`;
+                    if (i === 0) medal = '🥇';
+                    if (i === 1) medal = '🥈';
+                    if (i === 2) medal = '🥉';
+                    desc += `${medal} <@${id}> — **${data.points || 0} pkt**\n`;
+                });
+
+                const embed = new EmbedBuilder()
+                    .setTitle('🏆 PGL Major Singapur 2026 — Klasyfikacja Generalna')
+                    .setDescription(desc)
+                    .setColor(0xFFD700);
+
+                return interaction.reply({ embeds: [embed] });
+            }
+
+            // /admin
+            if (commandName === 'admin') {
+                if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+                    return interaction.reply({ content: '❌ Brak uprawnień do komend administratora.', ephemeral: true });
+                }
+
+                const subcommand = options.getSubcommand();
+
+                if (subcommand === 'dodaj_mecz') {
+                    const teamA = options.getString('druzyna_a');
+                    const teamB = options.getString('druzyna_b');
+                    const format = options.getString('format');
+
+                    const matchId = database.nextMatchId.toString();
+                    database.nextMatchId++;
+
+                    database.matches[matchId] = {
+                        details: `${teamA} vs${teamB}`,
+                        teamA,
+                        teamB,
+                        format,
+                        locked: false
+                    };
+
+                    await saveDB(database);
+                    return interaction.reply({ content: `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})` });
+                }
+
+                if (subcommand === 'zablokuj') {
+                    const matchId = options.getInteger('id').toString();
+                    if (!database.matches[matchId]) {
+                        return interaction.reply({ content: '❌ Nie znaleziono meczu o podanym ID.', ephemeral: true });
+                    }
+
+                    database.matches[matchId].locked = true;
+                    await saveDB(database);
+                    return interaction.reply({ content: `🔒 Zablokowano typowanie dla meczu ID **${matchId}**.` });
+                }
+            }
         }
 
-        // /profil
-        if (commandName === 'profil') {
-            const userId = interaction.user.id;
-            const userData = database.users[userId] || { points: 0, exactHits: 0, winnerHits: 0, settledCount: 0 };
-            const winRate = userData.settledCount > 0 ? Math.round(((userData.exactHits + userData.winnerHits) / userData.settledCount) * 100) : 0;
+        // B. OBSŁUGA WYBORU Z LISTY ROZWIJANEJ (SELECT MENU)
+        else if (interaction.isStringSelectMenu()) {
+            if (interaction.customId === 'select_match_to_bet') {
+                const selectedValue = interaction.values[0]; // np. "typ_mecz_1"
+                const matchId = selectedValue.replace('typ_mecz_', '');
+                const match = database.matches[matchId];
 
-            const embed = new EmbedBuilder()
-                .setTitle(`📊 Profil Gracza: ${interaction.user.username}`)
-                .setColor(0x00FFCC)
-                .addFields(
-                    { name: '🏆 Punkty', value: `**${userData.points || 0} pkt**`, inline: true },
-                    { name: '🎯 Dokładne Wyniki', value: `**${userData.exactHits || 0}**`, inline: true },
-                    { name: '✅ Trafieni Zwycięzcy', value: `**${userData.winnerHits || 0}**`, inline: true },
-                    { name: '📈 Skuteczność', value: `**${winRate}%**`, inline: true }
-                )
-                .setThumbnail(interaction.user.displayAvatarURL());
+                if (!match || match.locked) {
+                    return interaction.reply({ content: '❌ Ten mecz jest niedostępny lub został zablokowany.', ephemeral: true });
+                }
 
-            return interaction.reply({ embeds: [embed] });
+                // Otwieramy okienko (Modal) z typowaniem
+                const modal = new ModalBuilder()
+                    .setCustomId(`modal_bet_${matchId}`)
+                    .setTitle(`Typowanie: ${match.details} (${match.format})`);
+
+                const scoreInput = new TextInputBuilder()
+                    .setCustomId('score_input')
+                    .setLabel('Wynik serii (np. 2:0 lub 2:1)')
+                    .setPlaceholder('Wpisz np. 2:1')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                const mvpInput = new TextInputBuilder()
+                    .setCustomId('mvp_input')
+                    .setLabel('Wybierz MVP HLTV (Nick gracza)')
+                    .setPlaceholder('Wpisz nick zawodnika (np. ZywOo)')
+                    .setStyle(TextInputStyle.Short)
+                    .setRequired(true);
+
+                modal.addComponents(
+                    new ActionRowBuilder().addComponents(scoreInput),
+                    new ActionRowBuilder().addComponents(mvpInput)
+                );
+
+                return await interaction.showModal(modal);
+            }
         }
 
-        // /ranking
-        if (commandName === 'ranking') {
-            const sorted = Object.entries(database.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
-            if (sorted.length === 0) {
-                return interaction.reply({ content: '🏆 Tabela rankingowa jest pusta.', ephemeral: true });
-            }
+        // C. OBSŁUGA WYSŁANEGO FORMULARZA (MODAL SUBMIT)
+        else if (interaction.isModalSubmit()) {
+            if (interaction.customId.startsWith('modal_bet_')) {
+                const matchId = interaction.customId.replace('modal_bet_', '');
+                const score = interaction.fields.getTextInputValue('score_input');
+                const mvp = interaction.fields.getTextInputValue('mvp_input');
+                const userId = interaction.user.id;
 
-            let desc = '';
-            sorted.forEach(([id, data], i) => {
-                let medal = `${i + 1}.`;
-                if (i === 0) medal = '🥇';
-                if (i === 1) medal = '🥈';
-                if (i === 2) medal = '🥉';
-                desc += `${medal} <@${id}> — **${data.points || 0} pkt**\n`;
-            });
+                if (!database.bets) database.bets = {};
+                if (!database.bets[matchId]) database.bets[matchId] = {};
 
-            const embed = new EmbedBuilder()
-                .setTitle('🏆 PGL Major Singapur 2026 — Klasyfikacja Generalna')
-                .setDescription(desc)
-                .setColor(0xFFD700);
-
-            return interaction.reply({ embeds: [embed] });
-        }
-
-        // /admin
-        if (commandName === 'admin') {
-            if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-                return interaction.reply({ content: '❌ Brak uprawnień do komend administratora.', ephemeral: true });
-            }
-
-            const subcommand = options.getSubcommand();
-
-            if (subcommand === 'dodaj_mecz') {
-                const teamA = options.getString('druzyna_a');
-                const teamB = options.getString('druzyna_b');
-                const format = options.getString('format');
-
-                const matchId = database.nextMatchId.toString();
-                database.nextMatchId++;
-
-                database.matches[matchId] = {
-                    details: `${teamA} vs ${teamB}`,
-                    teamA,
-                    teamB,
-                    format,
-                    locked: false
+                // Zapisujemy typ użytkownika
+                database.bets[matchId][userId] = {
+                    score,
+                    mvp,
+                    timestamp: new Date().toISOString()
                 };
 
                 await saveDB(database);
-                return interaction.reply({ content: `✅ Dodano mecz ID **${matchId}**: **${teamA} vs ${teamB}** (${format})` });
-            }
 
-            if (subcommand === 'zablokuj') {
-                const matchId = options.getInteger('id').toString();
-                if (!database.matches[matchId]) {
-                    return interaction.reply({ content: '❌ Nie znaleziono meczu o podanym ID.', ephemeral: true });
-                }
-
-                database.matches[matchId].locked = true;
-                await saveDB(database);
-                return interaction.reply({ content: `🔒 Zablokowano typowanie dla meczu ID **${matchId}**.` });
+                return interaction.reply({ 
+                    content: `✅ Zapisano Twój typ na mecz **ID ${matchId}**!\n🎯 **Wynik:** \`${score}\`\n⭐ **MVP:** \`${mvp}\``, 
+                    ephemeral: true 
+                });
             }
         }
     } catch (err) {
-        console.error('❌ Błąd podczas obsługi interakcji:', err);
+        console.error('❌ Błąd obsługi interakcji:', err);
         if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: '❌ Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true });
+            await interaction.reply({ content: '❌ Wystąpił błąd podczas przetwarzania żądania.', ephemeral: true });
         }
     }
 });
 
 client.login(process.env.DISCORD_TOKEN);
-    
+                 
