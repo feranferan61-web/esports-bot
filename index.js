@@ -126,6 +126,13 @@ async function registerSlashCommands() {
     }
 }
 
+// Pobieranie aktualnego czasu w polskiej strefie (Europe/Warsaw)
+function getWarsawDate() {
+    const nowStr = new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" });
+    return new Date(nowStr);
+}
+
+// Konwersja tekstu DD-MM-YYYY HH:mm na Date w strefie czasowej
 function parseCustomDate(dateStr) {
     if (!dateStr) return null;
     try {
@@ -138,23 +145,27 @@ function parseCustomDate(dateStr) {
     }
 }
 
-function startAutoLockChecker() {
-    setInterval(async () => {
-        const now = new Date();
-        let changed = false;
+// Sprawdzanie i aktualizowanie statusu blokad meczów
+async function checkAndLockMatches() {
+    const now = getWarsawDate();
+    let changed = false;
 
-        for (const [mId, m] of Object.entries(memoryDB.matches)) {
-            if (!m.locked && m.lockDate) {
-                if (now >= new Date(m.lockDate)) {
-                    m.locked = true;
-                    changed = true;
-                    console.log(`🔒 Automatycznie zablokowano mecz ID ${mId}`);
-                }
+    for (const [mId, m] of Object.entries(memoryDB.matches)) {
+        if (!m.locked && m.lockDate) {
+            const lockTime = new Date(m.lockDate);
+            if (now >= lockTime) {
+                m.locked = true;
+                changed = true;
+                console.log(`🔒 Automatycznie zablokowano mecz ID ${mId}`);
             }
         }
+    }
 
-        if (changed) await saveDB();
-    }, 60000);
+    if (changed) await saveDB();
+}
+
+function startAutoLockChecker() {
+    setInterval(checkAndLockMatches, 30000); // Sprawdzaj co 30 sekund
 }
 
 client.once('ready', async () => {
@@ -166,6 +177,8 @@ client.once('ready', async () => {
 
 client.on('interactionCreate', async interaction => {
     try {
+        await checkAndLockMatches(); // Weryfikacja na żywo przy każdej interakcji
+
         if (interaction.isChatInputCommand()) {
             const { commandName, options } = interaction;
 
@@ -385,4 +398,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                                 
+                    
