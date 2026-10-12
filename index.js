@@ -11,6 +11,10 @@ let memoryDB = {
   matches: {},
   users: {},
   bets: {},
+  pickems: {
+    stages: {},
+    userPicks: {}
+  },
   settings: { locked: false },
   nextMatchId: 1
 };
@@ -27,6 +31,7 @@ async function initDB() {
         matches: loaded.matches || {},
         users: loaded.users || {},
         bets: loaded.bets || {},
+        pickems: loaded.pickems || { stages: {}, userPicks: {} },
         settings: loaded.settings || { locked: false },
         nextMatchId: loaded.nextMatchId || 1
       };
@@ -64,6 +69,16 @@ const slashCommands = [
   new SlashCommandBuilder().setName('profil').setDescription('Twój profil'),
   new SlashCommandBuilder().setName('ranking').setDescription('Ranking'),
   new SlashCommandBuilder()
+    .setName('pickem')
+    .setDescription('Wybierz swoje typy Pick\'Em na dany stage')
+    .addStringOption(opt => opt.setName('stage').setDescription('Wybierz stage').setRequired(true)
+      .addChoices(
+        { name: 'Stage 1 (Opening)', value: 'stage1' },
+        { name: 'Stage 2 (Elimination)', value: 'stage2' },
+        { name: 'Stage 3 (Playoffs)', value: 'stage3' }
+      )),
+  new SlashCommandBuilder().setName('moje_pickemy').setDescription('Wyświetla Twoje zapisane Pick\'Emy'),
+  new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Panel administracyjny')
     .addSubcommand(sub =>
@@ -75,6 +90,20 @@ const slashCommands = [
         .addStringOption(opt => opt.setName('data_blokady').setDescription('DD-MM-YYYY HH:mm').setRequired(false))
     )
     .addSubcommand(sub => sub.setName('zablokuj').setDescription('Zablokuj mecz').addIntegerOption(opt => opt.setName('id').setDescription('ID').setRequired(true)))
+    .addSubcommand(sub =>
+      sub.setName('pickem_setup')
+        .setDescription('Konfiguruj drużyny dla stage\'u Pick\'Em')
+        .addStringOption(opt => opt.setName('stage').setDescription('Stage').setRequired(true)
+          .addChoices({ name: 'Stage 1', value: 'stage1' }, { name: 'Stage 2', value: 'stage2' }, { name: 'Stage 3', value: 'stage3' }))
+        .addStringOption(opt => opt.setName('druzyny').setDescription('Lista drużyn oddzielona przecinkami').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('pickem_lock')
+        .setDescription('Zablokuj/odblokuj Pick\'Em dla stage\'u')
+        .addStringOption(opt => opt.setName('stage').setDescription('Stage').setRequired(true)
+          .addChoices({ name: 'Stage 1', value: 'stage1' }, { name: 'Stage 2', value: 'stage2' }, { name: 'Stage 3', value: 'stage3' }))
+        .addBooleanOption(opt => opt.setName('status').setDescription('True = zablokuj, False = odblokuj').setRequired(true))
+    )
 ].map(cmd => cmd.toJSON());
 
 function getWarsawDate() {
@@ -109,14 +138,16 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
   setInterval(checkAndLockMatches, 30000);
-  console.log('✅ Bot gotowy!');
+  console.log('✅ Bot gotowy z systemem Pick\'Em!');
 });
 
 client.on('interactionCreate', async interaction => {
   try {
     await checkAndLockMatches();
     if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === 'mecze') {
+      const { commandName, options } = interaction;
+
+      if (commandName === 'mecze') {
         const matchKeys = Object.keys(memoryDB.matches);
         const selectOptions = [];
         for (const mId of matchKeys) {
@@ -128,13 +159,56 @@ client.on('interactionCreate', async interaction => {
         const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('select_match_to_bet').setPlaceholder('Wybierz mecz...').addOptions(selectOptions));
         return interaction.reply({ content: 'Wybierz mecz:', components: [row], ephemeral: true });
       }
-      if (interaction.commandName === 'admin' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-        const sub = interaction.options.getSubcommand();
+
+      if (commandName === 'pickem') {
+        const stage = options.getString('stage');
+        const stageData = memoryDB.pickems.stages[stage];
+
+        if (!stageData || !stageData.teams || stageData.teams.length === 0) {
+          return interaction.reply({ content: `❌ Faza **${stage}** nie została jeszcze skonfigurowana przez administratora.`, ephemeral: true });
+        }
+        if (stageData.locked) {
+          return interaction.reply({ content: `🔒 Faza **${stage}** jest obecnie zablokowana do typowania.`, ephemeral: true });
+        }
+
+        const modal = new ModalBuilder().setCustomId(`modal_pickem_${stage}`).setTitle(`Pick'Em: ${stage.toUpperCase()}`);
+        const t30 = new TextInputBuilder().setCustomId('p_30').setLabel('2 drużyny 3-0 (rozdziel przecinkami)').setStyle(TextInputStyle.Short).setRequired(true);
+        const t03 = new TextInputBuilder().setCustomId('p_03').setLabel('2 drużyny 0-3 (rozdziel przecinkami)').setStyle(TextInputStyle.Short).setRequired(true);
+        const tAdv = new TextInputBuilder().setCustomId('p_adv').setLabel('6 drużyn z awansem (rozdziel przecinkami)').setStyle(TextInputStyle.Paragraph).setRequired(true);
+
+        modal.addComponents(
+          new ActionRowBuilder().addComponents(t30),
+          new ActionRowBuilder().addComponents(t03),
+          new ActionRowBuilder().addComponents(tAdv)
+        );
+        return await interaction.showModal(modal);
+      }
+
+      if (commandName === 'moje_pickemy') {
+        const userId = interaction.user.id;
+        const userPicks = memoryDB.pickems.userPicks[userId];
+
+        if (!userPicks || Object.keys(userPicks).length === 0) {
+          return interaction.reply({ content: '📋 Nie masz jeszcze zapisanych żadnych typów Pick\'Em.', ephemeral: true });
+        }
+
+        let desc = '';
+        for (const [stg, p] of Object.entries(userPicks)) {
+          desc += `### 🏆 ${stg.toUpperCase()}\n`;
+          desc += `• **3-0:** \`${p.threeZero}\`\n`;
+          desc += `• **0-3:** \`${p.zeroThree}\`\n`;
+          desc += `• **Awans (6):** \`${p.advancing}\`\n\n`;
+        }
+        return interaction.reply({ content: desc, ephemeral: true });
+      }
+
+      if (commandName === 'admin' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+        const sub = options.getSubcommand();
         if (sub === 'dodaj_mecz') {
-          const teamA = interaction.options.getString('druzyna_a');
-          const teamB = interaction.options.getString('druzyna_b');
-          const format = interaction.options.getString('format');
-          const lockStr = interaction.options.getString('data_blokady');
+          const teamA = options.getString('druzyna_a');
+          const teamB = options.getString('druzyna_b');
+          const format = options.getString('format');
+          const lockStr = options.getString('data_blokady');
           const lockDateObj = parseCustomDate(lockStr);
           
           const mId = memoryDB.nextMatchId.toString();
@@ -148,6 +222,42 @@ client.on('interactionCreate', async interaction => {
           await saveDB();
           return interaction.reply({ content: `✅ Dodano mecz ID ${mId}` });
         }
+
+        if (sub === 'pickem_setup') {
+          const stage = options.getString('stage');
+          const teams = options.getString('druzyny').split(',').map(t => t.trim()).filter(Boolean);
+          if (!memoryDB.pickems.stages[stage]) memoryDB.pickems.stages[stage] = { locked: false, teams: [] };
+          memoryDB.pickems.stages[stage].teams = teams;
+          await saveDB();
+          return interaction.reply({ content: `✅ Skonfigurowano stage **${stage}** (${teams.length} drużyn).` });
+        }
+
+        if (sub === 'pickem_lock') {
+          const stage = options.getString('stage');
+          const status = options.getBoolean('status');
+          if (!memoryDB.pickems.stages[stage]) memoryDB.pickems.stages[stage] = { locked: false, teams: [] };
+          memoryDB.pickems.stages[stage].locked = status;
+          await saveDB();
+          return interaction.reply({ content: `🔒 Status blokady dla **${stage}**: **${status}**` });
+        }
+      }
+    }
+
+    else if (interaction.isModalSubmit()) {
+      if (interaction.customId.startsWith('modal_pickem_')) {
+        const stage = interaction.customId.replace('modal_pickem_', '');
+        const stageData = memoryDB.pickems.stages[stage];
+        if (stageData && stageData.locked) return interaction.reply({ content: '❌ Faza jest zablokowana.', ephemeral: true });
+
+        const t30 = interaction.fields.getTextInputValue('p_30').trim();
+        const t03 = interaction.fields.getTextInputValue('p_03').trim();
+        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
+
+        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
+        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
+
+        await saveDB();
+        return interaction.reply({ content: `✅ Zapisano Twoje typy Pick'Em dla **${stage.toUpperCase()}**!`, ephemeral: true });
       }
     }
   } catch (e) {
@@ -156,4 +266,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                                              
+                                                             
