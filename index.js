@@ -104,6 +104,15 @@ const slashCommands = [
           .addChoices({ name: 'Stage 1', value: 'stage1' }, { name: 'Stage 2', value: 'stage2' }, { name: 'Stage 3', value: 'stage3' }))
         .addBooleanOption(opt => opt.setName('status').setDescription('True = zablokuj, False = odblokuj').setRequired(true))
     )
+    .addSubcommand(sub =>
+      sub.setName('pickem_rozlicz')
+        .setDescription('Rozlicz punkty Pick\'Em dla danego stage\'u')
+        .addStringOption(opt => opt.setName('stage').setDescription('Stage').setRequired(true)
+          .addChoices({ name: 'Stage 1', value: 'stage1' }, { name: 'Stage 2', value: 'stage2' }, { name: 'Stage 3', value: 'stage3' }))
+        .addStringOption(opt => opt.setName('oficjalne_30').setDescription('Oficjalne 3-0 (po przecinku)').setRequired(true))
+        .addStringOption(opt => opt.setName('oficjalne_03').setDescription('Oficjalne 0-3 (po przecinku)').setRequired(true))
+        .addStringOption(opt => opt.setName('oficjalne_adv').setDescription('Oficjalnie awansujące (po przecinku)').setRequired(true))
+    )
 ].map(cmd => cmd.toJSON());
 
 function getWarsawDate() {
@@ -138,7 +147,7 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
   setInterval(checkAndLockMatches, 30000);
-  console.log('✅ Bot gotowy z systemem Pick\'Em!');
+  console.log('✅ Bot gotowy z pełnym systemem Pick\'Em i rozliczaniem!');
 });
 
 client.on('interactionCreate', async interaction => {
@@ -202,6 +211,21 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
+      if (commandName === 'profil') {
+        const u = memoryDB.users[interaction.user.id] || { points: 0 };
+        return interaction.reply({ content: `📊 Twój profil:\n🏆 Punkty: **${u.points} pkt**`, ephemeral: true });
+      }
+
+      if (commandName === 'ranking') {
+        const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
+        if (sorted.length === 0) return interaction.reply({ content: '🏆 Ranking jest pusty.', ephemeral: true });
+        let desc = '';
+        sorted.forEach(([id, data], i) => {
+          desc += `${i + 1}. <@${id}> — **${data.points || 0} pkt**\n`;
+        });
+        return interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏆 Tabela Liderów').setDescription(desc)] });
+      }
+
       if (commandName === 'admin' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const sub = options.getSubcommand();
         if (sub === 'dodaj_mecz') {
@@ -240,6 +264,39 @@ client.on('interactionCreate', async interaction => {
           await saveDB();
           return interaction.reply({ content: `🔒 Status blokady dla **${stage}**: **${status}**` });
         }
+
+        if (sub === 'pickem_rozlicz') {
+          const stage = options.getString('stage');
+          const official30 = options.getString('oficjalne_30').split(',').map(t => t.trim().toLowerCase());
+          const official03 = options.getString('oficjalne_03').split(',').map(t => t.trim().toLowerCase());
+          const officialAdv = options.getString('oficjalne_adv').split(',').map(t => t.trim().toLowerCase());
+
+          let totalUsersProcessed = 0;
+
+          for (const [userId, userStages] of Object.entries(memoryDB.pickems.userPicks || {})) {
+            const pick = userStages[stage];
+            if (!pick) continue;
+
+            if (!memoryDB.users[userId]) {
+              memoryDB.users[userId] = { points: 0 };
+            }
+
+            let earnedPoints = 0;
+            const player30 = (pick.threeZero || '').split(',').map(t => t.trim().toLowerCase());
+            const player03 = (pick.zeroThree || '').split(',').map(t => t.trim().toLowerCase());
+            const playerAdv = (pick.advancing || '').split(',').map(t => t.trim().toLowerCase());
+
+            player30.forEach(team => { if (official30.includes(team)) earnedPoints += 3; });
+            player03.forEach(team => { if (official03.includes(team)) earnedPoints += 3; });
+            playerAdv.forEach(team => { if (officialAdv.includes(team)) earnedPoints += 1; });
+
+            memoryDB.users[userId].points += earnedPoints;
+            totalUsersProcessed++;
+          }
+
+          await saveDB();
+          return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage}**! Przeliczono punkty dla **${totalUsersProcessed}** graczy.` });
+        }
       }
     }
 
@@ -266,4 +323,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                                                             
+          
