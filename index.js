@@ -25,8 +25,8 @@ let memoryDB = {
     users: {},
     bets: {},
     pickems: {
-        stages: {}, // np. stage1: { locked: false, teams: [...] },
-        userPicks: {} // userId -> { stage1: { threeZero: [...], zeroThree: [...], advancing: [...] } }
+        stages: {},
+        userPicks: {}
     },
     settings: { locked: false },
     nextMatchId: 1
@@ -137,7 +137,7 @@ const slashCommands = [
                         { name: 'Stage 2', value: 'stage2' },
                         { name: 'Stage 3', value: 'stage3' }
                     ))
-                .addStringOption(opt => opt.setName('druzyny').setDescription('Lista drużyn oddzielona przecinkami (np. FaZe,G2,NaVi...)').setRequired(true))
+                .addStringOption(opt => opt.setName('druzyny').setDescription('Lista drużyn oddzielona przecinkami').setRequired(true))
         )
         .addSubcommand(sub =>
             sub.setName('pickem_lock')
@@ -277,7 +277,6 @@ client.on('interactionCreate', async interaction => {
                     return interaction.reply({ content: `🔒 Faza **${stage}** jest obecnie zablokowana do typowania.`, ephemeral: true });
                 }
 
-                // Wysyłamy prosty modal z instrukcją wpisania drużyn oddzielonych przecinkami
                 const modal = new ModalBuilder().setCustomId(`modal_pickem_${stage}`).setTitle(`Pick'Em: ${stage.toUpperCase()}`);
                 
                 const t30 = new TextInputBuilder().setCustomId('p_30').setLabel('2 drużyny 3-0 (rozdziel przecinkami)').setStyle(TextInputStyle.Short).setRequired(true);
@@ -416,4 +415,11 @@ client.on('interactionCreate', async interaction => {
                         if (sM2 && (bet.map2 || '').trim() === sM2) u.points += 2;
                         if (sM3 && (bet.map3 || '').trim() === sM3) u.points += 2;
                         if ((bet.mvp || '').trim().toLowerCase() === sMVP) u.points += 2;
-          
+                    }
+
+                    await saveDB();
+                    return interaction.reply({ content: `🎉 Rozliczono mecz ID ${mId} dla${total} graczy!` });
+                }
+
+                if (sub === 'pickem_setup') {
+                    co
