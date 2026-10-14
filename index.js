@@ -113,6 +113,10 @@ const slashCommands = [
         .addStringOption(opt => opt.setName('oficjalne_03').setDescription('Oficjalne 0-3 (po przecinku)').setRequired(true))
         .addStringOption(opt => opt.setName('oficjalne_adv').setDescription('Oficjalnie awansujące (po przecinku)').setRequired(true))
     )
+    .addSubcommand(sub =>
+      sub.setName('reset_ranking')
+        .setDescription('⚠️ Resetuje punkty i statystyki WSZYSTKICH graczy do zera')
+    )
 ].map(cmd => cmd.toJSON());
 
 function getWarsawDate() {
@@ -147,7 +151,7 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
   setInterval(checkAndLockMatches, 30000);
-  console.log('✅ Bot gotowy z pełnym systemem Pick\'Em i rozliczaniem!');
+  console.log('✅ Bot gotowy z pełnym systemem Pick\'Em, rozliczaniem i resetem rankingu!');
 });
 
 client.on('interactionCreate', async interaction => {
@@ -297,6 +301,12 @@ client.on('interactionCreate', async interaction => {
           await saveDB();
           return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage}**! Przeliczono punkty dla **${totalUsersProcessed}** graczy.` });
         }
+
+        if (sub === 'reset_ranking') {
+          memoryDB.users = {};
+          await saveDB();
+          return interaction.reply({ content: '⚠️ Zresetowano punkty i statystyki wszystkich graczy w rankingu!', ephemeral: true });
+        }
       }
     }
 
@@ -323,4 +333,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-          
+      
