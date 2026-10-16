@@ -149,9 +149,14 @@ async function checkAndLockMatches() {
 client.once('ready', async () => {
   await initDB();
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
-  await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
+  try {
+    await rest.put(Routes.applicationCommands(process.env.CLIENT_ID), { body: slashCommands });
+    console.log('✅ Zarejestrowano komendy Slash w Discordzie!');
+  } catch (err) {
+    console.error('❌ Błąd podczas rejestracji komend Slash:', err);
+  }
   setInterval(checkAndLockMatches, 30000);
-  console.log('✅ Bot gotowy z pełnym systemem Pick\'Em, rozliczaniem i resetem rankingu!');
+  console.log('✅ Bot gotowy!');
 });
 
 client.on('interactionCreate', async interaction => {
@@ -168,9 +173,9 @@ client.on('interactionCreate', async interaction => {
           if (!m || m.locked) continue;
           selectOptions.push({ label: `Mecz ${mId}: ${m.details}`, value: `typ_mecz_${mId}` });
         }
-        if (selectOptions.length === 0) return interaction.reply({ content: 'Brak dostępnych meczów.', ephemeral: true });
+        if (selectOptions.length === 0) return interaction.reply({ content: 'Brak dostępnych meczów do typowania.', ephemeral: true });
         const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('select_match_to_bet').setPlaceholder('Wybierz mecz...').addOptions(selectOptions));
-        return interaction.reply({ content: 'Wybierz mecz:', components: [row], ephemeral: true });
+        return interaction.reply({ content: 'Wybierz mecz z listy:', components: [row], ephemeral: true });
       }
 
       if (commandName === 'pickem') {
@@ -222,7 +227,7 @@ client.on('interactionCreate', async interaction => {
 
       if (commandName === 'ranking') {
         const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
-        if (sorted.length === 0) return interaction.reply({ content: '🏆 Ranking jest pusty.', ephemeral: true });
+        if (sorted.length === 0) return interaction.reply({ content: '🏆 Ranking jest obecnie pusty.', ephemeral: true });
         let desc = '';
         sorted.forEach(([id, data], i) => {
           desc += `${i + 1}. <@${id}> — **${data.points || 0} pkt**\n`;
@@ -248,7 +253,7 @@ client.on('interactionCreate', async interaction => {
             lockDate: lockDateObj ? lockDateObj.toISOString() : null
           };
           await saveDB();
-          return interaction.reply({ content: `✅ Dodano mecz ID ${mId}` });
+          return interaction.reply({ content: `✅ Dodano mecz ID ${mId}: **${teamA} vs ${teamB}** (${format})` });
         }
 
         if (sub === 'pickem_setup') {
@@ -328,9 +333,9 @@ client.on('interactionCreate', async interaction => {
       }
     }
   } catch (e) {
-    console.error(e);
+    console.error('❌ Błąd podczas obsługi interakcji:', e);
   }
 });
 
 client.login(process.env.DISCORD_TOKEN);
-      
+                                                                                                           
