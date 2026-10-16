@@ -122,7 +122,7 @@ client.on('interactionCreate', async interaction => {
         for (const mId of matchKeys) {
           const m = memoryDB.matches[mId];
           if (!m || m.locked) continue;
-          selectOptions.push({ label: `Mecz ID ${mId}: ${m.details}`, value: `typ_mecz_${mId}` });
+          selectOptions.push({ label: `Mecz ID ${mId}:${m.details}`, value: `typ_mecz_${mId}` });
         }
         if (selectOptions.length === 0) return interaction.reply({ content: 'Brak dostępnych meczów do typowania.', ephemeral: true });
         const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('select_match_to_bet').setPlaceholder('Wybierz mecz...').addOptions(selectOptions));
@@ -141,7 +141,8 @@ client.on('interactionCreate', async interaction => {
         for (const [mId, betData] of Object.entries(userBets)) {
           const match = memoryDB.matches[mId];
           const details = match ? match.details : `Mecz ID ${mId}`;
-          desc += `• **${details}**: Wygrana \`${betData.winner}\` | Wynik \`${betData.score}\`\n`;
+          const mvpTxt = betData.mvp ? ` | MVP: \`${betData.mvp}\`` : '';
+          desc += `• **${details}**: Wygrana \`${betData.winner}\` | Wynik \`${betData.score}\`${mvpTxt}\n`;
         }
         return interaction.reply({ content: desc, ephemeral: true });
       }
@@ -196,7 +197,7 @@ client.on('interactionCreate', async interaction => {
           }
         }
         if (userMvp) {
-          desc += `🌟 **Twój typ na MVP:** \`${userMvp}\`\n`;
+          desc += `🌟 **Twój typ na MVP Turnieju:** \`${userMvp}\`\n`;
         }
 
         return interaction.reply({ content: desc, ephemeral: true });
@@ -355,20 +356,29 @@ client.on('interactionCreate', async interaction => {
         if (match.locked) return interaction.reply({ content: '🔒 Typowanie tego meczu zostało już zablokowane.', ephemeral: true });
 
         const modal = new ModalBuilder().setCustomId(`modal_bet_match_${mId}`).setTitle(`Obstaw mecz: ${match.details}`);
+        
         const tWinner = new TextInputBuilder()
           .setCustomId('b_winner')
           .setLabel(`Zwycięzca (${match.teamA} lub ${match.teamB})`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
+
         const tScore = new TextInputBuilder()
           .setCustomId('b_score')
-          .setLabel('Dokładny wynik (np. 13-8 lub 2-1)')
+          .setLabel(`Dokładny wynik (${match.format}: np. 13-8 lub 2-1)`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
 
+        const tMvp = new TextInputBuilder()
+          .setCustomId('b_mvp')
+          .setLabel('MVP tego meczu (Nick gracza)')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false);
+
         modal.addComponents(
           new ActionRowBuilder().addComponents(tWinner),
-          new ActionRowBuilder().addComponents(tScore)
+          new ActionRowBuilder().addComponents(tScore),
+          new ActionRowBuilder().addComponents(tMvp)
         );
         return await interaction.showModal(modal);
       }
@@ -383,12 +393,23 @@ client.on('interactionCreate', async interaction => {
 
         const winner = interaction.fields.getTextInputValue('b_winner').trim();
         const score = interaction.fields.getTextInputValue('b_score').trim();
+        const matchMvp = interaction.fields.getTextInputValue('b_mvp').trim() || 'Brak';
 
         if (!memoryDB.bets[interaction.user.id]) memoryDB.bets[interaction.user.id] = {};
-        memoryDB.bets[interaction.user.id][mId] = { winner, score };
+        memoryDB.bets[interaction.user.id][mId] = { 
+          winner, 
+          score,
+          mvp: matchMvp 
+        };
 
         await saveDB();
-        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Wygrany: **${winner}**\n• Przewidywany wynik: **${score}**`, ephemeral: true });
+        return interaction.reply({ 
+          content: `🎯 **Zapisano Twój typ na mecz ${match.details}!**\n` +
+                   `• Zwycięzca: **${winner}**\n` +
+                   `• Wynik: **${score}**\n` +
+                   `• MVP Meczowe: **${matchMvp}**`, 
+          ephemeral: true 
+        });
       }
 
       if (interaction.customId.startsWith('modal_pickem_')) {
@@ -426,4 +447,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-            
+  
