@@ -10,10 +10,11 @@ const pool = new Pool({
 let memoryDB = {
   matches: {},
   users: {},
-  bets: {},
+  bets: {}, // Przechowuje typy meczów { userId: { matchId: { winner: "Falcons", score: "13-8" } } }
   pickems: {
     stages: {},
-    userPicks: {}
+    userPicks: {},
+    mvpPicks: {}
   },
   settings: { locked: false },
   nextMatchId: 1
@@ -31,7 +32,11 @@ async function initDB() {
         matches: loaded.matches || {},
         users: loaded.users || {},
         bets: loaded.bets || {},
-        pickems: loaded.pickems || { stages: {}, userPicks: {} },
+        pickems: {
+          stages: loaded.pickems?.stages || {},
+          userPicks: loaded.pickems?.userPicks || {},
+          mvpPicks: loaded.pickems?.mvpPicks || {}
+        },
         settings: loaded.settings || { locked: false },
         nextMatchId: loaded.nextMatchId || 1
       };
@@ -69,7 +74,7 @@ const client = new Client({
 
 const slashCommands = [
   new SlashCommandBuilder().setName('mecze').setDescription('Wyświetla listę meczów do typowania'),
-  new SlashCommandBuilder().setName('moje_typy').setDescription('Wyświetla Twoje typy'),
+  new SlashCommandBuilder().setName('moje_typy').setDescription('Wyświetla Twoje typy na mecze'),
   new SlashCommandBuilder().setName('profil').setDescription('Twój profil'),
   new SlashCommandBuilder().setName('ranking').setDescription('Ranking'),
   new SlashCommandBuilder()
@@ -81,7 +86,7 @@ const slashCommands = [
         { name: 'Stage 2 (Elimination)', value: 'stage2' },
         { name: 'Stage 3 (Playoffs)', value: 'stage3' }
       )),
-  new SlashCommandBuilder().setName('moje_pickemy').setDescription('Wyświetla Twoje zapisane Pick\'Emy'),
+  new SlashCommandBuilder().setName('moje_pickemy').setDescription('Wyświetla Twoje zapisane Pick\'Emy i MVP'),
   new SlashCommandBuilder()
     .setName('admin')
     .setDescription('Panel administracyjny')
@@ -94,6 +99,13 @@ const slashCommands = [
         .addStringOption(opt => opt.setName('data_blokady').setDescription('DD-MM-YYYY HH:mm').setRequired(false))
     )
     .addSubcommand(sub => sub.setName('zablokuj').setDescription('Zablokuj mecz').addIntegerOption(opt => opt.setName('id').setDescription('ID').setRequired(true)))
+    .addSubcommand(sub =>
+      sub.setName('rozlicz_mecz')
+        .setDescription('Rozlicz wynik meczu')
+        .addIntegerOption(opt => opt.setName('id').setDescription('ID meczu').setRequired(true))
+        .addStringOption(opt => opt.setName('zwyciezca').setDescription('Nazwa wygranej drużyny').setRequired(true))
+        .addStringOption(opt => opt.setName('wynik').setDescription('Dokładny wynik (np. 13-8 lub 2-1)').setRequired(true))
+    )
     .addSubcommand(sub =>
       sub.setName('pickem_setup')
         .setDescription('Konfiguruj drużyny dla stage\'u Pick\'Em')
@@ -116,6 +128,11 @@ const slashCommands = [
         .addStringOption(opt => opt.setName('oficjalne_30').setDescription('Oficjalne 3-0 (po przecinku)').setRequired(true))
         .addStringOption(opt => opt.setName('oficjalne_03').setDescription('Oficjalne 0-3 (po przecinku)').setRequired(true))
         .addStringOption(opt => opt.setName('oficjalne_adv').setDescription('Oficjalnie awansujące (po przecinku)').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('pickem_rozlicz_mvp')
+        .setDescription('Rozlicz punkty za wytypowanie MVP (3 pkt)')
+        .addStringOption(opt => opt.setName('gracz_mvp').setDescription('Nick oficjalnego MVP Turnieju').setRequired(true))
     )
     .addSubcommand(sub =>
       sub.setName('reset_ranking')
@@ -167,7 +184,6 @@ client.on('interactionCreate', async interaction => {
   try {
     await checkAndLockMatches();
 
-    // 1. OBSŁUGA KOMEND SLASH
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
@@ -182,6 +198,23 @@ client.on('interactionCreate', async interaction => {
         if (selectOptions.length === 0) return interaction.reply({ content: 'Brak dostępnych meczów do typowania.', ephemeral: true });
         const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('select_match_to_bet').setPlaceholder('Wybierz mecz...').addOptions(selectOptions));
         return interaction.reply({ content: 'Wybierz mecz z listy:', components: [row], ephemeral: true });
+      }
+
+      if (commandName === 'moje_typy') {
+        const userId = interaction.user.id;
+        const userBets = memoryDB.bets[userId];
+
+        if (!userBets || Object.keys(userBets).length === 0) {
+          return interaction.reply({ content: '📋 Nie obstawiłeś jeszcze żadnego meczu.', ephemeral: true });
+        }
+
+        let desc = '### 🎯 Twoje typy na mecze:\n';
+        for (const [mId, betData] of Object.entries(userBets)) {
+          const match = memoryDB.matches[mId];
+          const details = match ? match.details : `Mecz ID ${mId}`;
+          desc += `• **${details}**: Wygrana \`${betData.winner}\` | Wynik \`${betData.score}\`\n`;
+        }
+        return interaction.reply({ content: desc, ephemeral: true });
       }
 
       if (commandName === 'pickem') {
@@ -200,29 +233,43 @@ client.on('interactionCreate', async interaction => {
         const t03 = new TextInputBuilder().setCustomId('p_03').setLabel('2 drużyny 0-3 (rozdziel przecinkami)').setStyle(TextInputStyle.Short).setRequired(true);
         const tAdv = new TextInputBuilder().setCustomId('p_adv').setLabel('6 drużyn z awansem (rozdziel przecinkami)').setStyle(TextInputStyle.Paragraph).setRequired(true);
 
-        modal.addComponents(
+        const components = [
           new ActionRowBuilder().addComponents(t30),
           new ActionRowBuilder().addComponents(t03),
           new ActionRowBuilder().addComponents(tAdv)
-        );
+        ];
+
+        if (stage === 'stage3') {
+          const tMvp = new TextInputBuilder().setCustomId('p_mvp').setLabel('Twój typ na MVP Turnieju (Nick gracza)').setStyle(TextInputStyle.Short).setRequired(false);
+          components.push(new ActionRowBuilder().addComponents(tMvp));
+        }
+
+        modal.addComponents(components);
         return await interaction.showModal(modal);
       }
 
       if (commandName === 'moje_pickemy') {
         const userId = interaction.user.id;
         const userPicks = memoryDB.pickems.userPicks[userId];
+        const userMvp = memoryDB.pickems.mvpPicks ? memoryDB.pickems.mvpPicks[userId] : null;
 
-        if (!userPicks || Object.keys(userPicks).length === 0) {
+        if ((!userPicks || Object.keys(userPicks).length === 0) && !userMvp) {
           return interaction.reply({ content: '📋 Nie masz jeszcze zapisanych żadnych typów Pick\'Em.', ephemeral: true });
         }
 
         let desc = '';
-        for (const [stg, p] of Object.entries(userPicks)) {
-          desc += `### 🏆 ${stg.toUpperCase()}\n`;
-          desc += `• **3-0:** \`${p.threeZero}\`\n`;
-          desc += `• **0-3:** \`${p.zeroThree}\`\n`;
-          desc += `• **Awans (6):** \`${p.advancing}\`\n\n`;
+        if (userPicks) {
+          for (const [stg, p] of Object.entries(userPicks)) {
+            desc += `### 🏆 ${stg.toUpperCase()}\n`;
+            desc += `• **3-0:** \`${p.threeZero}\`\n`;
+            desc += `• **0-3:** \`${p.zeroThree}\`\n`;
+            desc += `• **Awans (6):** \`${p.advancing}\`\n\n`;
+          }
         }
+        if (userMvp) {
+          desc += `🌟 **Twój typ na MVP:** \`${userMvp}\`\n`;
+        }
+
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
@@ -243,6 +290,7 @@ client.on('interactionCreate', async interaction => {
 
       if (commandName === 'admin' && interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
         const sub = options.getSubcommand();
+
         if (sub === 'dodaj_mecz') {
           const teamA = options.getString('druzyna_a');
           const teamB = options.getString('druzyna_b');
@@ -260,6 +308,39 @@ client.on('interactionCreate', async interaction => {
           };
           await saveDB();
           return interaction.reply({ content: `✅ Dodano mecz ID ${mId}: **${teamA} vs ${teamB}** (${format})` });
+        }
+
+        if (sub === 'rozlicz_mecz') {
+          const mId = options.getInteger('id').toString();
+          const winner = options.getString('zwyciezca').trim().toLowerCase();
+          const exactScore = options.getString('wynik').trim().replace(/\s+/g, '');
+
+          const match = memoryDB.matches[mId];
+          if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu o tym ID.', ephemeral: true });
+
+          let processed = 0;
+          for (const [userId, bets] of Object.entries(memoryDB.bets)) {
+            const userBet = bets[mId];
+            if (!userBet) continue;
+
+            if (!memoryDB.users[userId]) memoryDB.users[userId] = { points: 0 };
+
+            const userWinner = userBet.winner.trim().toLowerCase();
+            const userScore = userBet.score.trim().replace(/\s+/g, '');
+
+            if (userWinner === winner) {
+              if (userScore === exactScore) {
+                memoryDB.users[userId].points += 3; // +3 pkt za trafiony wynik i zwycięzcę
+              } else {
+                memoryDB.users[userId].points += 1; // +1 pkt za samo trafienie zwycięzcy
+              }
+              processed++;
+            }
+          }
+
+          match.locked = true;
+          await saveDB();
+          return interaction.reply({ content: `🎉 Rozliczono mecz ID ${mId} (**${winner.toUpperCase()}**, Wynik: **${exactScore}**). Przyznano punkty **${processed}** graczom!` });
         }
 
         if (sub === 'pickem_setup') {
@@ -292,9 +373,7 @@ client.on('interactionCreate', async interaction => {
             const pick = userStages[stage];
             if (!pick) continue;
 
-            if (!memoryDB.users[userId]) {
-              memoryDB.users[userId] = { points: 0 };
-            }
+            if (!memoryDB.users[userId]) memoryDB.users[userId] = { points: 0 };
 
             let earnedPoints = 0;
             const player30 = (pick.threeZero || '').split(',').map(t => t.trim().toLowerCase());
@@ -313,6 +392,22 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage}**! Przeliczono punkty dla **${totalUsersProcessed}** graczy.` });
         }
 
+        if (sub === 'pickem_rozlicz_mvp') {
+          const officialMvp = options.getString('gracz_mvp').trim().toLowerCase();
+          let winnersCount = 0;
+
+          for (const [userId, mvpPick] of Object.entries(memoryDB.pickems.mvpPicks || {})) {
+            if (mvpPick.trim().toLowerCase() === officialMvp) {
+              if (!memoryDB.users[userId]) memoryDB.users[userId] = { points: 0 };
+              memoryDB.users[userId].points += 3;
+              winnersCount++;
+            }
+          }
+
+          await saveDB();
+          return interaction.reply({ content: `🌟 Rozliczono MVP Major'a (**${officialMvp.toUpperCase()}**)! Dodano po 3 pkt dla **${winnersCount}** graczy.` });
+        }
+
         if (sub === 'reset_ranking') {
           memoryDB.users = {};
           await saveDB();
@@ -321,76 +416,14 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // 2. OBSŁUGA ROZWIJANEGO MENU (SELECT MENU)
     else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_match_to_bet') {
-        const selectedValue = interaction.values[0]; // np. "typ_mecz_1"
+        const selectedValue = interaction.values[0];
         const mId = selectedValue.replace('typ_mecz_', '');
         const match = memoryDB.matches[mId];
 
-        if (!match) {
-          return interaction.reply({ content: '❌ Ten mecz już nie istnieje.', ephemeral: true });
-        }
-        if (match.locked) {
-          return interaction.reply({ content: '🔒 Typowanie tego meczu zostało już zablokowane.', ephemeral: true });
-        }
+        if (!match) return interaction.reply({ content: '❌ Ten mecz już nie istnieje.', ephemeral: true });
+        if (match.locked) return interaction.reply({ content: '🔒 Typowanie tego meczu zostało już zablokowane.', ephemeral: true });
 
-        // Przyciski do wyboru wygranej drużyny A lub B
-        const row = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder()
-            .setCustomId(`bet_winner_${mId}`)
-            .setPlaceholder(`Wybierz zwycięzcę dla ${match.details}...`)
-            .addOptions([
-              { label: `Wygrana: ${match.teamA}`, value: match.teamA },
-              { label: `Wygrana: ${match.teamB}`, value: match.teamB }
-            ])
-        );
-
-        return interaction.reply({ content: `⚔️ **${match.details}** (${match.format})\nWybierz drużynę, która Twoim zdaniem wygra:`, components: [row], ephemeral: true });
-      }
-
-      if (interaction.customId.startsWith('bet_winner_')) {
-        const mId = interaction.customId.replace('bet_winner_', '');
-        const selectedWinner = interaction.values[0];
-        const match = memoryDB.matches[mId];
-
-        if (!match || match.locked) {
-          return interaction.reply({ content: '❌ Mecz jest zablokowany lub nie istnieje.', ephemeral: true });
-        }
-
-        if (!memoryDB.bets[interaction.user.id]) memoryDB.bets[interaction.user.id] = {};
-        memoryDB.bets[interaction.user.id][mId] = selectedWinner;
-
-        await saveDB();
-        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**: zwycięzca **${selectedWinner}**!`, ephemeral: true });
-      }
-    }
-
-    // 3. OBSŁUGA FORMULARZY (MODALS)
-    else if (interaction.isModalSubmit()) {
-      if (interaction.customId.startsWith('modal_pickem_')) {
-        const stage = interaction.customId.replace('modal_pickem_', '');
-        const stageData = memoryDB.pickems.stages[stage];
-        if (stageData && stageData.locked) return interaction.reply({ content: '❌ Faza jest zablokowana.', ephemeral: true });
-
-        const t30 = interaction.fields.getTextInputValue('p_30').trim();
-        const t03 = interaction.fields.getTextInputValue('p_03').trim();
-        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-
-        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
-        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
-
-        await saveDB();
-        return interaction.reply({ content: `✅ Zapisano Twoje typy Pick'Em dla **${stage.toUpperCase()}**!`, ephemeral: true });
-      }
-    }
-  } catch (e) {
-    console.error('❌ Błąd podczas obsługi interakcji:', e);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
-    }
-  }
-});
-
-client.login(process.env.DISCORD_TOKEN);
-          
+        const modal = new ModalBuilder().setCustomId(`modal_bet_match_${mId}`).setTitle(`Obstaw mecz: ${match.details}`);
+        const tWinner = new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (${match.teamA} lub ${m
