@@ -1,4 +1,4 @@
-// Wersja v2.5 - PGL Major Singapore 2026
+// Wersja v2.6 - PGL Major Singapore 2026
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, REST, Routes, SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const { Pool } = require('pg');
 const http = require('http');
