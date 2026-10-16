@@ -122,7 +122,7 @@ client.on('interactionCreate', async interaction => {
         for (const mId of matchKeys) {
           const m = memoryDB.matches[mId];
           if (!m || m.locked) continue;
-          selectOptions.push({ label: `Mecz ID ${mId}:${m.details}`, value: `typ_mecz_${mId}` });
+          selectOptions.push({ label: `Mecz ID ${mId}: ${m.details}`, value: `typ_mecz_${mId}` });
         }
         if (selectOptions.length === 0) return interaction.reply({ content: 'Brak dostępnych meczów do typowania.', ephemeral: true });
         const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('select_match_to_bet').setPlaceholder('Wybierz mecz...').addOptions(selectOptions));
@@ -132,36 +132,25 @@ client.on('interactionCreate', async interaction => {
       if (commandName === 'druzyny') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
-
         if (!stageData || !stageData.teams || stageData.teams.length === 0) {
-          return interaction.reply({ content: `❌ Faza **${stage.toUpperCase()}** nie została jeszcze skonfigurowana lub nie ma przypisanych drużyn przez administratora.`, ephemeral: true });
+          return interaction.reply({ content: `❌ Faza **${stage.toUpperCase()}** nie została jeszcze skonfigurowana.`, ephemeral: true });
         }
-
         const teamsList = stageData.teams.map((team, index) => `${index + 1}. **${team}**`).join('\n');
-        
-        const embed = new EmbedBuilder()
-          .setTitle(`🛡️ Drużyny uczestniczące w ${stage.toUpperCase()}`)
-          .setDescription(teamsList)
-          .setColor('#0099ff')
-          .setFooter({ text: 'PGL Major Singapore 2026' });
-
+        const embed = new EmbedBuilder().setTitle(`🛡️ Drużyny w ${stage.toUpperCase()}`).setDescription(teamsList).setColor('#0099ff');
         return interaction.reply({ embeds: [embed], ephemeral: false });
       }
 
       if (commandName === 'moje_typy') {
         const userId = interaction.user.id;
         const userBets = memoryDB.bets[userId];
-
         if (!userBets || Object.keys(userBets).length === 0) {
           return interaction.reply({ content: '📋 Nie obstawiłeś jeszcze żadnego meczu.', ephemeral: true });
         }
-
-        let desc = '### 🎯 Twoje typy na mecze:\n';
-        for (const [mId, betData] of Object.entries(userBets)) {
+        let desc = '### 🎯 Twoje typy:\n';
+        for (const [mId, b] of Object.entries(userBets)) {
           const match = memoryDB.matches[mId];
           const details = match ? match.details : `Mecz ID ${mId}`;
-          const mvpTxt = betData.mvp ? ` | MVP: \`${betData.mvp}\`` : '';
-          desc += `• **${details}**: Wygrana \`${betData.winner}\` | Wynik \`${betData.score}\`${mvpTxt}\n`;
+          desc += `• **${details}**: Wygrana \`\${b.winner}\` | Wynik \`\${b.score}\` | MVP: \`\${b.mvp || 'Brak'}\`\n`;
         }
         return interaction.reply({ content: desc, ephemeral: true });
       }
@@ -169,71 +158,52 @@ client.on('interactionCreate', async interaction => {
       if (commandName === 'pickem') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
-
         if (!stageData || !stageData.teams || stageData.teams.length === 0) {
-          return interaction.reply({ content: `❌ Faza **${stage}** nie została jeszcze skonfigurowana przez administratora.`, ephemeral: true });
+          return interaction.reply({ content: `❌ Faza **${stage}** nie jest skonfigurowana.`, ephemeral: true });
         }
         if (stageData.locked) {
-          return interaction.reply({ content: `🔒 Faza **${stage}** jest obecnie zablokowana do typowania.`, ephemeral: true });
+          return interaction.reply({ content: `🔒 Faza jest zablokowana.`, ephemeral: true });
         }
-
         const modal = new ModalBuilder().setCustomId(`modal_pickem_${stage}`).setTitle(`Pick'Em: ${stage.toUpperCase()}`);
-        const t30 = new TextInputBuilder().setCustomId('p_30').setLabel('2 drużyny 3-0 (rozdziel przecinkami)').setStyle(TextInputStyle.Short).setRequired(true);
-        const t03 = new TextInputBuilder().setCustomId('p_03').setLabel('2 drużyny 0-3 (rozdziel przecinkami)').setStyle(TextInputStyle.Short).setRequired(true);
-        const tAdv = new TextInputBuilder().setCustomId('p_adv').setLabel('6 drużyn z awansem (rozdziel przecinkami)').setStyle(TextInputStyle.Paragraph).setRequired(true);
-
-        const components = [
-          new ActionRowBuilder().addComponents(t30),
-          new ActionRowBuilder().addComponents(t03),
-          new ActionRowBuilder().addComponents(tAdv)
-        ];
-
+        const t30 = new TextInputBuilder().setCustomId('p_30').setLabel('2 drużyny 3-0 (po przecinku)').setStyle(TextInputStyle.Short).setRequired(true);
+        const t03 = new TextInputBuilder().setCustomId('p_03').setLabel('2 drużyny 0-3 (po przecinku)').setStyle(TextInputStyle.Short).setRequired(true);
+        const tAdv = new TextInputBuilder().setCustomId('p_adv').setLabel('6 drużyn z awansem (po przecinku)').setStyle(TextInputStyle.Paragraph).setRequired(true);
+        const comps = [new ActionRowBuilder().addComponents(t30), new ActionRowBuilder().addComponents(t03), new ActionRowBuilder().addComponents(tAdv)];
         if (stage === 'stage3') {
-          const tMvp = new TextInputBuilder().setCustomId('p_mvp').setLabel('Twój typ na MVP Turnieju (Nick gracza)').setStyle(TextInputStyle.Short).setRequired(false);
-          components.push(new ActionRowBuilder().addComponents(tMvp));
+          const tMvp = new TextInputBuilder().setCustomId('p_mvp').setLabel('MVP Turnieju (Nick)').setStyle(TextInputStyle.Short).setRequired(false);
+          comps.push(new ActionRowBuilder().addComponents(tMvp));
         }
-
-        modal.addComponents(components);
+        modal.addComponents(comps);
         return await interaction.showModal(modal);
       }
 
       if (commandName === 'moje_pickemy') {
         const userId = interaction.user.id;
         const userPicks = memoryDB.pickems.userPicks[userId];
-        const userMvp = memoryDB.pickems.mvpPicks ? memoryDB.pickems.mvpPicks[userId] : null;
-
+        const userMvp = memoryDB.pickems.mvpPicks?.[userId];
         if ((!userPicks || Object.keys(userPicks).length === 0) && !userMvp) {
-          return interaction.reply({ content: '📋 Nie masz jeszcze zapisanych żadnych typów Pick\'Em.', ephemeral: true });
+          return interaction.reply({ content: '📋 Brak zapisanych Pick\'Emów.', ephemeral: true });
         }
-
         let desc = '';
         if (userPicks) {
           for (const [stg, p] of Object.entries(userPicks)) {
-            desc += `### 🏆 ${stg.toUpperCase()}\n`;
-            desc += `• **3-0:** \`${p.threeZero}\`\n`;
-            desc += `• **0-3:** \`${p.zeroThree}\`\n`;
-            desc += `• **Awans (6):** \`${p.advancing}\`\n\n`;
+            desc += `### 🏆 \${stg.toUpperCase()}\n• **3-0:** \`\${p.threeZero}\`\n• **0-3:** \`\${p.zeroThree}\`\n• **Awans:** \`\${p.advancing}\`\n\n`;
           }
         }
-        if (userMvp) {
-          desc += `🌟 **Twój typ na MVP Turnieju:** \`${userMvp}\`\n`;
-        }
-
+        if (userMvp) desc += `🌟 **MVP Turnieju:** \`\${userMvp}\`\n`;
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
       if (commandName === 'profil') {
         const u = memoryDB.users[interaction.user.id] || { points: 0 };
-        return interaction.reply({ content: `📊 Twój profil:\n🏆 Punkty: **${u.points} pkt**`, ephemeral: true });
+        return interaction.reply({ content: `📊 Twój profil:\n🏆 Punkty: **\${u.points} pkt**`, ephemeral: true });
       }
 
       if (commandName === 'ranking') {
         const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
-        if (sorted.length === 0) return interaction.reply({ content: '🏆 Ranking jest obecnie pusty.', ephemeral: true });
+        if (sorted.length === 0) return interaction.reply({ content: '🏆 Ranking jest pusty.', ephemeral: true });
         let desc = '';
-        sorted.forEach(([id, data], i) => {
-          desc += `${i + 1}. <@${id}> — **${data.points || 0} pkt**\n`;
-        });
+        sorted.forEach(([id, data], i) => { desc += `\${i + 1}. <@\${id}> — **\${data.points || 0} pkt**\n`; });
         return interaction.reply({ embeds: [new EmbedBuilder().setTitle('🏆 Tabela Liderów').setDescription(desc)] });
       }
 
@@ -244,68 +214,40 @@ client.on('interactionCreate', async interaction => {
           const teamA = options.getString('druzyna_a');
           const teamB = options.getString('druzyna_b');
           const format = options.getString('format');
-          const lockStr = options.getString('data_blokady');
-          const lockDateObj = parseCustomDate(lockStr);
-          
+          const lockDateObj = parseCustomDate(options.getString('data_blokady'));
           const mId = memoryDB.nextMatchId.toString();
           memoryDB.nextMatchId++;
-          memoryDB.matches[mId] = {
-            details: `${teamA} vs ${teamB}`,
-            teamA, teamB, format,
-            locked: false,
-            lockDate: lockDateObj ? lockDateObj.toISOString() : null
-          };
+          memoryDB.matches[mId] = { details: `\${teamA} vs \${teamB}`, teamA, teamB, format, locked: false, lockDate: lockDateObj ? lockDateObj.toISOString() : null };
           await saveDB();
-          return interaction.reply({ content: `✅ Dodano mecz ID ${mId}: **${teamA} vs ${teamB}** (${format})` });
+          return interaction.reply({ content: `✅ Dodano mecz ID \${mId}: **\${teamA} vs \**\${teamB}** (\${format})` });
         }
 
         if (sub === 'rozlicz_mecz') {
           const mId = options.getInteger('id').toString();
           const winner = options.getString('zwyciezca').trim().toLowerCase();
           const exactScore = options.getString('wynik').trim().replace(/\s+/g, '');
-          const matchMvpOption = options.getString('mvp_mecz');
-          const officialMvp = matchMvpOption ? matchMvpOption.trim().toLowerCase() : null;
-
+          const officialMvp = options.getString('mvp_mecz')?.trim().toLowerCase() || null;
           const match = memoryDB.matches[mId];
-          if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu o tym ID.', ephemeral: true });
+          if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu.', ephemeral: true });
 
-          let processed = 0;
-          let mvpWinnersCount = 0;
-
+          let processed = 0, mvpCount = 0;
           for (const [userId, bets] of Object.entries(memoryDB.bets)) {
-            const userBet = bets[mId];
-            if (!userBet) continue;
-
+            const b = bets[mId];
+            if (!b) continue;
             if (!memoryDB.users[userId]) memoryDB.users[userId] = { points: 0 };
-
-            const userWinner = userBet.winner.trim().toLowerCase();
-            const userScore = userBet.score.trim().replace(/\s+/g, '');
-            const userMvp = userBet.mvp ? userBet.mvp.trim().toLowerCase() : '';
-
-            if (userWinner === winner) {
-              if (userScore === exactScore) {
-                memoryDB.users[userId].points += 3;
-              } else {
-                memoryDB.users[userId].points += 1;
-              }
+            if (b.winner.trim().toLowerCase() === winner) {
+              if (b.score.trim().replace(/\s+/g, '') === exactScore) memoryDB.users[userId].points += 3;
+              else memoryDB.users[userId].points += 1;
               processed++;
             }
-
-            if (officialMvp && userMvp && userMvp === officialMvp) {
+            if (officialMvp && b.mvp && b.mvp.trim().toLowerCase() === officialMvp) {
               memoryDB.users[userId].points += 1;
-              mvpWinnersCount++;
+              mvpCount++;
             }
           }
-
           match.locked = true;
           await saveDB();
-
-          let replyText = `🎉 Rozliczono mecz ID ${mId} (**${winner.toUpperCase()}**, Wynik: **${exactScore}**). Przyznano punkty **${processed}** graczom!`;
-          if (officialMvp) {
-            replyText += `\n🌟 Oficjalne MVP Meczowe: **${officialMvp.toUpperCase()}** (+1 pkt dla **${mvpWinnersCount}** graczy).`;
-          }
-
-          return interaction.reply({ content: replyText });
+          return interaction.reply({ content: `🎉 Rozliczono mecz ID \${mId}. Przyznano punkty \${processed} graczom (MVP: \${mvpCount}).` });
         }
 
         if (sub === 'pickem_setup') {
@@ -314,7 +256,7 @@ client.on('interactionCreate', async interaction => {
           if (!memoryDB.pickems.stages[stage]) memoryDB.pickems.stages[stage] = { locked: false, teams: [] };
           memoryDB.pickems.stages[stage].teams = teams;
           await saveDB();
-          return interaction.reply({ content: `✅ Skonfigurowano stage **${stage}** (${teams.length} drużyn).` });
+          return interaction.reply({ content: `✅ Skonfigurowano stage \${stage} (\${teams.length} drużyn).` });
         }
 
         if (sub === 'pickem_lock') {
@@ -323,97 +265,62 @@ client.on('interactionCreate', async interaction => {
           if (!memoryDB.pickems.stages[stage]) memoryDB.pickems.stages[stage] = { locked: false, teams: [] };
           memoryDB.pickems.stages[stage].locked = status;
           await saveDB();
-          return interaction.reply({ content: `🔒 Status blokady dla **${stage}**: **${status}**` });
+          return interaction.reply({ content: `🔒 Blokada \${stage}: \${status}` });
         }
 
         if (sub === 'pickem_rozlicz') {
           const stage = options.getString('stage');
-          const official30 = options.getString('oficjalne_30').split(',').map(t => t.trim().toLowerCase());
-          const official03 = options.getString('oficjalne_03').split(',').map(t => t.trim().toLowerCase());
-          const officialAdv = options.getString('oficjalne_adv').split(',').map(t => t.trim().toLowerCase());
-
-          let totalUsersProcessed = 0;
-
-          for (const [userId, userStages] of Object.entries(memoryDB.pickems.userPicks || {})) {
-            const pick = userStages[stage];
-            if (!pick) continue;
-
+          const off30 = options.getString('oficjalne_30').split(',').map(t => t.trim().toLowerCase());
+          const off03 = options.getString('oficjalne_03').split(',').map(t => t.trim().toLowerCase());
+          const offAdv = options.getString('oficjalne_adv').split(',').map(t => t.trim().toLowerCase());
+          let count = 0;
+          for (const [userId, stgs] of Object.entries(memoryDB.pickems.userPicks || {})) {
+            const p = stgs[stage];
+            if (!p) continue;
             if (!memoryDB.users[userId]) memoryDB.users[userId] = { points: 0 };
-
-            let earnedPoints = 0;
-            const player30 = (pick.threeZero || '').split(',').map(t => t.trim().toLowerCase());
-            const player03 = (pick.zeroThree || '').split(',').map(t => t.trim().toLowerCase());
-            const playerAdv = (pick.advancing || '').split(',').map(t => t.trim().toLowerCase());
-
-            player30.forEach(team => { if (official30.includes(team)) earnedPoints += 3; });
-            player03.forEach(team => { if (official03.includes(team)) earnedPoints += 3; });
-            playerAdv.forEach(team => { if (officialAdv.includes(team)) earnedPoints += 1; });
-
-            memoryDB.users[userId].points += earnedPoints;
-            totalUsersProcessed++;
+            let pts = 0;
+            p.threeZero?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off30.includes(t)) pts += 3; });
+            p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off03.includes(t)) pts += 3; });
+            p.advancing?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (offAdv.includes(t)) pts += 1; });
+            memoryDB.users[userId].points += pts;
+            count++;
           }
-
           await saveDB();
-          return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage}**! Przeliczono punkty dla **${totalUsersProcessed}** graczy.` });
+          return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla \${stage} (\${count} graczy).` });
         }
 
         if (sub === 'pickem_rozlicz_mvp') {
-          const officialMvp = options.getString('gracz_mvp').trim().toLowerCase();
-          let winnersCount = 0;
-
-          for (const [userId, mvpPick] of Object.entries(memoryDB.pickems.mvpPicks || {})) {
-            if (mvpPick.trim().toLowerCase() === officialMvp) {
+          const offMvp = options.getString('gracz_mvp').trim().toLowerCase();
+          let count = 0;
+          for (const [userId, mvp] of Object.entries(memoryDB.pickems.mvpPicks || {})) {
+            if (mvp.trim().toLowerCase() === offMvp) {
               if (!memoryDB.users[userId]) memoryDB.users[userId] = { points: 0 };
               memoryDB.users[userId].points += 3;
-              winnersCount++;
+              count++;
             }
           }
-
           await saveDB();
-          return interaction.reply({ content: `🌟 Rozliczono MVP Major'a (**${officialMvp.toUpperCase()}**)! Dodano po 3 pkt dla **${winnersCount}** graczy.` });
+          return interaction.reply({ content: `🌟 Rozliczono MVP (\${offMvp}): +3 pkt dla \${count} graczy.` });
         }
 
         if (sub === 'reset_ranking') {
           memoryDB.users = {};
           await saveDB();
-          return interaction.reply({ content: '⚠️ Zresetowano punkty i statystyki wszystkich graczy w rankingu!', ephemeral: true });
+          return interaction.reply({ content: '⚠️ Zresetowano ranking!', ephemeral: true });
         }
       }
     }
 
     else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_match_to_bet') {
-        const selectedValue = interaction.values[0];
-        const mId = selectedValue.replace('typ_mecz_', '');
+        const mId = interaction.values[0].replace('typ_mecz_', '');
         const match = memoryDB.matches[mId];
-
-        if (!match) return interaction.reply({ content: '❌ Ten mecz już nie istnieje.', ephemeral: true });
-        if (match.locked) return interaction.reply({ content: '🔒 Typowanie tego meczu zostało już zablokowane.', ephemeral: true });
-
-        const modal = new ModalBuilder().setCustomId(`modal_bet_match_${mId}`).setTitle(`Obstaw mecz: ${match.details}`);
-        
-        const tWinner = new TextInputBuilder()
-          .setCustomId('b_winner')
-          .setLabel(`Zwycięzca (${match.teamA} lub ${match.teamB})`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const tScore = new TextInputBuilder()
-          .setCustomId('b_score')
-          .setLabel(`Dokładny wynik (${match.format}: np. 13-8 lub 2-1)`)
-          .setStyle(TextInputStyle.Short)
-          .setRequired(true);
-
-        const tMvp = new TextInputBuilder()
-          .setCustomId('b_mvp')
-          .setLabel('MVP tego meczu (Nick gracza)')
-          .setStyle(TextInputStyle.Short)
-          .setRequired(false);
-
+        if (!match || match.locked) return interaction.reply({ content: '❌ Mecz niedostępny.', ephemeral: true });
+        const modal = new ModalBuilder().setCustomId(`modal_bet_match_\${mId}`).setTitle(`Obstaw: \${match.details}`);
         modal.addComponents(
-          new ActionRowBuilder().addComponents(tWinner),
-          new ActionRowBuilder().addComponents(tScore),
-          new ActionRowBuilder().addComponents(tMvp)
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (\${match.teamA}/\${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_score').setLabel('Wynik (np. 13-8 / 2-1)').setStyle(TextInputStyle.Short).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_mvp').setLabel('MVP meczu (opcjonalnie)').setStyle(TextInputStyle.Short).setRequired(false))
         );
         return await interaction.showModal(modal);
       }
@@ -423,54 +330,38 @@ client.on('interactionCreate', async interaction => {
       if (interaction.customId.startsWith('modal_bet_match_')) {
         const mId = interaction.customId.replace('modal_bet_match_', '');
         const match = memoryDB.matches[mId];
-
-        if (!match || match.locked) return interaction.reply({ content: '❌ Mecz jest zablokowany lub nie istnieje.', ephemeral: true });
-
+        if (!match || match.locked) return interaction.reply({ content: '❌ Błąd.', ephemeral: true });
         const winner = interaction.fields.getTextInputValue('b_winner').trim();
         const score = interaction.fields.getTextInputValue('b_score').trim();
-        const matchMvp = interaction.fields.getTextInputValue('b_mvp').trim() || 'Brak';
-
+        const mvp = interaction.fields.getTextInputValue('b_mvp').trim() || 'Brak';
         if (!memoryDB.bets[interaction.user.id]) memoryDB.bets[interaction.user.id] = {};
-        memoryDB.bets[interaction.user.id][mId] = { 
-          winner, 
-          score,
-          mvp: matchMvp 
-        };
-
+        memoryDB.bets[interaction.user.id][mId] = { winner, score, mvp };
         await saveDB();
-        return interaction.reply({ 
-          content: `🎯 **Zapisano Twój typ na mecz ${match.details}!**\n` +
-                   `• Zwycięzca: **${winner}**\n` +
-                   `• Wynik: **${score}**\n` +
-                   `• MVP Meczowe: **${matchMvp}**`, 
-          ephemeral: true 
-        });
+        return interaction.reply({ content: `🎯 Zapisano typ na \${match.details}!`, ephemeral: true });
       }
 
       if (interaction.customId.startsWith('modal_pickem_')) {
         const stage = interaction.customId.replace('modal_pickem_', '');
-        const stageData = memoryDB.pickems.stages[stage];
-        if (stageData && stageData.locked) return interaction.reply({ content: '❌ Faza jest zablokowana.', ephemeral: true });
-
         const t30 = interaction.fields.getTextInputValue('p_30').trim();
         const t03 = interaction.fields.getTextInputValue('p_03').trim();
         const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-
         if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
         memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
-
         if (stage === 'stage3') {
-          try {
-            const mvpVal = interaction.fields.getTextInputValue('p_mvp');
-            if (mvpVal && mvpVal.t
+          const mvp = interaction.fields.getTextInputValue('p_mvp')?.trim();
+          if (mvp) {
+            if (!memoryDB.pickems.mvpPicks) memoryDB.pickems.mvpPicks = {};
+            memoryDB.pickems.mvpPicks[interaction.user.id] = mvp;
+          }
+        }
+        await saveDB();
+        return interaction.reply({ content: `✅ Zapisano Pick'Em dla \${stage}!`, ephemeral: true });
+      }
     }
   } catch (e) {
-    console.error('❌ Błąd podczas obsługi interakcji:', e);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
-    }
+    console.error('Błąd:', e);
   }
 });
 
 client.login(process.env.DISCORD_TOKEN);
-        
+          
