@@ -15,6 +15,10 @@ const slashCommands = [
     .setDescription('Pokazuje ile masz punktów i jaką masz skuteczność'),
 
   new SlashCommandBuilder()
+    .setName('ranking')
+    .setDescription('Wyświetla tabelę liderów z TOP 10 graczy na serwerze'),
+
+  new SlashCommandBuilder()
     .setName('druzyny')
     .setDescription('Pokazuje drużyny, które grają w konkretnym stage Major\'a')
     .addStringOption(opt => 
@@ -112,4 +116,3 @@ const slashCommands = [
 ].map(cmd => cmd.toJSON());
 
 module.exports = slashCommands;
-                     
