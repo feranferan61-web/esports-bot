@@ -1,3 +1,4 @@
+// Wersja v2.5 - PGL Major Singapore 2026
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, REST, Routes, SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 const { Pool } = require('pg');
 const http = require('http');
@@ -431,5 +432,4 @@ client.on('interactionCreate', async interaction => {
           .setLabel(`Zwycięzca (${match.teamA} lub ${match.teamB})`)
           .setStyle(TextInputStyle.Short)
           .setRequired(true);
-        const tScore = new TextInputBuilder()
-          .s
+        const tS
