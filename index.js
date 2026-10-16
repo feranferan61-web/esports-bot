@@ -53,11 +53,16 @@ async function saveDB() {
   }
 }
 
+// Serwer HTTP podtrzymujący działanie na Renderze (24/7 z UptimeRobot)
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Bot PGL Major Singapur 2026 dziala 24/7!\n');
 });
-server.listen(process.env.PORT || 3000);
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`🌐 Serwer HTTP uruchomiony na porcie ${PORT}`);
+});
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -156,7 +161,7 @@ client.once('ready', async () => {
     console.error('❌ Błąd podczas rejestracji komend Slash:', err);
   }
   setInterval(checkAndLockMatches, 30000);
-  console.log('✅ Bot gotowy!');
+  console.log(`✅ Bot ${client.user.tag} jest gotowy do działania!`);
 });
 
 client.on('interactionCreate', async interaction => {
@@ -334,8 +339,11 @@ client.on('interactionCreate', async interaction => {
     }
   } catch (e) {
     console.error('❌ Błąd podczas obsługi interakcji:', e);
+    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
+    }
   }
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                                                                                                           
+                         
