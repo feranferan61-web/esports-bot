@@ -33,6 +33,7 @@ const slashCommands = [
         .addIntegerOption(opt => opt.setName('id').setDescription('ID meczu').setRequired(true))
         .addStringOption(opt => opt.setName('zwyciezca').setDescription('Nazwa wygranej drużyny').setRequired(true))
         .addStringOption(opt => opt.setName('wynik').setDescription('Dokładny wynik (np. 13-8 lub 2-1)').setRequired(true))
+        .addStringOption(opt => opt.setName('mvp_mecz').setDescription('Oficjalny MVP meczu (opcjonalnie)').setRequired(false))
     )
     .addSubcommand(sub =>
       sub.setName('pickem_setup')
@@ -69,3 +70,4 @@ const slashCommands = [
 ].map(cmd => cmd.toJSON());
 
 module.exports = slashCommands;
+                   
