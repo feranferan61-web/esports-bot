@@ -129,6 +129,25 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: 'Wybierz mecz z listy:', components: [row], ephemeral: true });
       }
 
+      if (commandName === 'druzyny') {
+        const stage = options.getString('stage');
+        const stageData = memoryDB.pickems.stages[stage];
+
+        if (!stageData || !stageData.teams || stageData.teams.length === 0) {
+          return interaction.reply({ content: `❌ Faza **${stage.toUpperCase()}** nie została jeszcze skonfigurowana lub nie ma przypisanych drużyn przez administratora.`, ephemeral: true });
+        }
+
+        const teamsList = stageData.teams.map((team, index) => `${index + 1}. **${team}**`).join('\n');
+        
+        const embed = new EmbedBuilder()
+          .setTitle(`🛡️ Drużyny uczestniczące w ${stage.toUpperCase()}`)
+          .setDescription(teamsList)
+          .setColor('#0099ff')
+          .setFooter({ text: 'PGL Major Singapore 2026' });
+
+        return interaction.reply({ embeds: [embed], ephemeral: false });
+      }
+
       if (commandName === 'moje_typy') {
         const userId = interaction.user.id;
         const userBets = memoryDB.bets[userId];
@@ -263,7 +282,6 @@ client.on('interactionCreate', async interaction => {
             const userScore = userBet.score.trim().replace(/\s+/g, '');
             const userMvp = userBet.mvp ? userBet.mvp.trim().toLowerCase() : '';
 
-            // Punkty za zwycięzcę i wynik meczu
             if (userWinner === winner) {
               if (userScore === exactScore) {
                 memoryDB.users[userId].points += 3;
@@ -273,7 +291,6 @@ client.on('interactionCreate', async interaction => {
               processed++;
             }
 
-            // Dodatkowy +1 punkt za trafienie MVP meczu
             if (officialMvp && userMvp && userMvp === officialMvp) {
               memoryDB.users[userId].points += 1;
               mvpWinnersCount++;
@@ -445,24 +462,4 @@ client.on('interactionCreate', async interaction => {
         if (stage === 'stage3') {
           try {
             const mvpVal = interaction.fields.getTextInputValue('p_mvp');
-            if (mvpVal && mvpVal.trim().length > 0) {
-              if (!memoryDB.pickems.mvpPicks) memoryDB.pickems.mvpPicks = {};
-              memoryDB.pickems.mvpPicks[interaction.user.id] = mvpVal.trim();
-            }
-          } catch (e) {}
-        }
-
-        await saveDB();
-        return interaction.reply({ content: `✅ Zapisano Twoje typy Pick'Em dla **${stage.toUpperCase()}**!`, ephemeral: true });
-      }
-    }
-  } catch (e) {
-    console.error('❌ Błąd podczas obsługi interakcji:', e);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
-    }
-  }
-});
-
-client.login(process.env.DISCORD_TOKEN);
-      
+            if (mvpVal && mvpVal.t
