@@ -463,3 +463,14 @@ client.on('interactionCreate', async interaction => {
           try {
             const mvpVal = interaction.fields.getTextInputValue('p_mvp');
             if (mvpVal && mvpVal.t
+    }
+  } catch (e) {
+    console.error('❌ Błąd podczas obsługi interakcji:', e);
+    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
+    }
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
+        
