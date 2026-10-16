@@ -244,11 +244,15 @@ client.on('interactionCreate', async interaction => {
           const mId = options.getInteger('id').toString();
           const winner = options.getString('zwyciezca').trim().toLowerCase();
           const exactScore = options.getString('wynik').trim().replace(/\s+/g, '');
+          const matchMvpOption = options.getString('mvp_mecz');
+          const officialMvp = matchMvpOption ? matchMvpOption.trim().toLowerCase() : null;
 
           const match = memoryDB.matches[mId];
           if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu o tym ID.', ephemeral: true });
 
           let processed = 0;
+          let mvpWinnersCount = 0;
+
           for (const [userId, bets] of Object.entries(memoryDB.bets)) {
             const userBet = bets[mId];
             if (!userBet) continue;
@@ -257,7 +261,9 @@ client.on('interactionCreate', async interaction => {
 
             const userWinner = userBet.winner.trim().toLowerCase();
             const userScore = userBet.score.trim().replace(/\s+/g, '');
+            const userMvp = userBet.mvp ? userBet.mvp.trim().toLowerCase() : '';
 
+            // Punkty za zwycięzcę i wynik meczu
             if (userWinner === winner) {
               if (userScore === exactScore) {
                 memoryDB.users[userId].points += 3;
@@ -266,11 +272,23 @@ client.on('interactionCreate', async interaction => {
               }
               processed++;
             }
+
+            // Dodatkowy +1 punkt za trafienie MVP meczu
+            if (officialMvp && userMvp && userMvp === officialMvp) {
+              memoryDB.users[userId].points += 1;
+              mvpWinnersCount++;
+            }
           }
 
           match.locked = true;
           await saveDB();
-          return interaction.reply({ content: `🎉 Rozliczono mecz ID ${mId} (**${winner.toUpperCase()}**, Wynik: **${exactScore}**). Przyznano punkty **${processed}** graczom!` });
+
+          let replyText = `🎉 Rozliczono mecz ID ${mId} (**${winner.toUpperCase()}**, Wynik: **${exactScore}**). Przyznano punkty **${processed}** graczom!`;
+          if (officialMvp) {
+            replyText += `\n🌟 Oficjalne MVP Meczowe: **${officialMvp.toUpperCase()}** (+1 pkt dla **${mvpWinnersCount}** graczy).`;
+          }
+
+          return interaction.reply({ content: replyText });
         }
 
         if (sub === 'pickem_setup') {
@@ -447,4 +465,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-  
+      
