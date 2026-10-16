@@ -6,6 +6,19 @@ const slashCommands = [
   new SlashCommandBuilder().setName('profil').setDescription('Twój profil'),
   new SlashCommandBuilder().setName('ranking').setDescription('Ranking'),
   new SlashCommandBuilder()
+    .setName('druzyny')
+    .setDescription('Wyświetla listę drużyn biorących udział w wybranym stage\'u Major\'a')
+    .addStringOption(opt => 
+      opt.setName('stage')
+         .setDescription('Wybierz stage')
+         .setRequired(true)
+         .addChoices(
+           { name: 'Stage 1 (Opening)', value: 'stage1' },
+           { name: 'Stage 2 (Elimination)', value: 'stage2' },
+           { name: 'Stage 3 (Playoffs)', value: 'stage3' }
+         )
+    ),
+  new SlashCommandBuilder()
     .setName('pickem')
     .setDescription('Wybierz swoje typy Pick\'Em na dany stage')
     .addStringOption(opt => opt.setName('stage').setDescription('Wybierz stage').setRequired(true)
@@ -70,4 +83,3 @@ const slashCommands = [
 ].map(cmd => cmd.toJSON());
 
 module.exports = slashCommands;
-                   
