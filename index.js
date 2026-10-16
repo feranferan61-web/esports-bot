@@ -53,7 +53,6 @@ async function saveDB() {
   }
 }
 
-// Serwer HTTP podtrzymujący działanie na Renderze (24/7 z UptimeRobot)
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Bot PGL Major Singapur 2026 dziala 24/7!\n');
@@ -167,6 +166,8 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
   try {
     await checkAndLockMatches();
+
+    // 1. OBSŁUGA KOMEND SLASH
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
@@ -176,7 +177,7 @@ client.on('interactionCreate', async interaction => {
         for (const mId of matchKeys) {
           const m = memoryDB.matches[mId];
           if (!m || m.locked) continue;
-          selectOptions.push({ label: `Mecz ${mId}: ${m.details}`, value: `typ_mecz_${mId}` });
+          selectOptions.push({ label: `Mecz ID ${mId}: ${m.details}`, value: `typ_mecz_${mId}` });
         }
         if (selectOptions.length === 0) return interaction.reply({ content: 'Brak dostępnych meczów do typowania.', ephemeral: true });
         const row = new ActionRowBuilder().addComponents(new StringSelectMenuBuilder().setCustomId('select_match_to_bet').setPlaceholder('Wybierz mecz...').addOptions(selectOptions));
@@ -320,6 +321,52 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
+    // 2. OBSŁUGA ROZWIJANEGO MENU (SELECT MENU)
+    else if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'select_match_to_bet') {
+        const selectedValue = interaction.values[0]; // np. "typ_mecz_1"
+        const mId = selectedValue.replace('typ_mecz_', '');
+        const match = memoryDB.matches[mId];
+
+        if (!match) {
+          return interaction.reply({ content: '❌ Ten mecz już nie istnieje.', ephemeral: true });
+        }
+        if (match.locked) {
+          return interaction.reply({ content: '🔒 Typowanie tego meczu zostało już zablokowane.', ephemeral: true });
+        }
+
+        // Przyciski do wyboru wygranej drużyny A lub B
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId(`bet_winner_${mId}`)
+            .setPlaceholder(`Wybierz zwycięzcę dla ${match.details}...`)
+            .addOptions([
+              { label: `Wygrana: ${match.teamA}`, value: match.teamA },
+              { label: `Wygrana: ${match.teamB}`, value: match.teamB }
+            ])
+        );
+
+        return interaction.reply({ content: `⚔️ **${match.details}** (${match.format})\nWybierz drużynę, która Twoim zdaniem wygra:`, components: [row], ephemeral: true });
+      }
+
+      if (interaction.customId.startsWith('bet_winner_')) {
+        const mId = interaction.customId.replace('bet_winner_', '');
+        const selectedWinner = interaction.values[0];
+        const match = memoryDB.matches[mId];
+
+        if (!match || match.locked) {
+          return interaction.reply({ content: '❌ Mecz jest zablokowany lub nie istnieje.', ephemeral: true });
+        }
+
+        if (!memoryDB.bets[interaction.user.id]) memoryDB.bets[interaction.user.id] = {};
+        memoryDB.bets[interaction.user.id][mId] = selectedWinner;
+
+        await saveDB();
+        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**: zwycięzca **${selectedWinner}**!`, ephemeral: true });
+      }
+    }
+
+    // 3. OBSŁUGA FORMULARZY (MODALS)
     else if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('modal_pickem_')) {
         const stage = interaction.customId.replace('modal_pickem_', '');
@@ -346,4 +393,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-                         
+          
