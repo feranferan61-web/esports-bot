@@ -10,7 +10,7 @@ const pool = new Pool({
 let memoryDB = {
   matches: {},
   users: {},
-  bets: {}, // Przechowuje typy meczów { userId: { matchId: { winner: "Falcons", score: "13-8" } } }
+  bets: {},
   pickems: {
     stages: {},
     userPicks: {},
@@ -330,9 +330,9 @@ client.on('interactionCreate', async interaction => {
 
             if (userWinner === winner) {
               if (userScore === exactScore) {
-                memoryDB.users[userId].points += 3; // +3 pkt za trafiony wynik i zwycięzcę
+                memoryDB.users[userId].points += 3;
               } else {
-                memoryDB.users[userId].points += 1; // +1 pkt za samo trafienie zwycięzcy
+                memoryDB.users[userId].points += 1;
               }
               processed++;
             }
@@ -426,4 +426,10 @@ client.on('interactionCreate', async interaction => {
         if (match.locked) return interaction.reply({ content: '🔒 Typowanie tego meczu zostało już zablokowane.', ephemeral: true });
 
         const modal = new ModalBuilder().setCustomId(`modal_bet_match_${mId}`).setTitle(`Obstaw mecz: ${match.details}`);
-        const tWinner = new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (${match.teamA} lub ${m
+        const tWinner = new TextInputBuilder()
+          .setCustomId('b_winner')
+          .setLabel(`Zwycięzca (${match.teamA} lub ${match.teamB})`)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true);
+        const tScore = new TextInputBuilder()
+          .s
