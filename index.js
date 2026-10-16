@@ -52,7 +52,6 @@ async function saveDB() {
   }
 }
 
-// Serwer HTTP pod Render (24/7)
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Bot Major 2026 dziala 24/7!\n');
@@ -64,13 +63,11 @@ const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-// Czas w strefie Warsaw Poland
 function getWarsawDate() {
   const nowStr = new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" });
   return new Date(nowStr);
 }
 
-// Parsowanie formatu DD-MM-YYYY HH:mm
 function parseWarsawDate(dateStr) {
   if (!dateStr) return null;
   try {
@@ -83,7 +80,6 @@ function parseWarsawDate(dateStr) {
   }
 }
 
-// Automatyczne sprawdzanie blokady meczów czasowo
 async function checkAndLockMatches() {
   const now = getWarsawDate();
   let changed = false;
@@ -165,7 +161,31 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      // 4. /druzyny
+      // 4. /ranking
+      if (commandName === 'ranking') {
+        const sorted = Object.entries(memoryDB.users)
+          .sort((a, b) => (b[1].points || 0) - (a[1].points || 0))
+          .slice(0, 10);
+
+        if (sorted.length === 0) {
+          return interaction.reply({ content: '🏆 Ranking jest obecnie pusty. Nikt jeszcze nie zdobył punktów!', ephemeral: true });
+        }
+
+        let desc = '';
+        sorted.forEach(([id, data], i) => {
+          const acc = data.totalBets > 0 ? ((data.correctBets / data.totalBets) * 100).toFixed(0) : 0;
+          desc += `${i + 1}. <@${id}> — **${data.points || 0} pkt** (Skuteczność: ${acc}%)\n`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle('🏆 Tabela Liderów — TOP 10')
+          .setDescription(desc)
+          .setColor('#ffd700');
+
+        return interaction.reply({ embeds: [embed] });
+      }
+
+      // 5. /druzyny
       if (commandName === 'druzyny') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
@@ -177,7 +197,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: false });
       }
 
-      // 5. /pickem
+      // 6. /pickem
       if (commandName === 'pickem') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
@@ -285,12 +305,10 @@ client.on('interactionCreate', async interaction => {
 
           if (uWinner === winner) {
             if (uScore === exactScore) {
-              // Trafiony wynik (+3 pkt)
               memoryDB.users[userId].points += 3;
               memoryDB.users[userId].correctBets++;
               bet.result = 3;
             } else {
-              // Trafiony tylko zwycięzca (+1 pkt)
               memoryDB.users[userId].points += 1;
               memoryDB.users[userId].correctBets++;
               bet.result = 1;
@@ -301,7 +319,6 @@ client.on('interactionCreate', async interaction => {
           processed++;
         }
 
-        // Automatyczne usunięcie rozliczonego meczu z listy dostępnych do typowania
         delete memoryDB.matches[mId];
         await saveDB();
 
@@ -351,7 +368,7 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // --- OBSŁUGA SELECT MENU (Wybór meczu do typowania) ---
+    // --- OBSŁUGA SELECT MENU ---
     else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_match_menu') {
         const mId = interaction.values[0].replace('bet_match_', '');
@@ -374,7 +391,6 @@ client.on('interactionCreate', async interaction => {
 
     // --- OBSŁUGA FORMULARZY MODAL ---
     else if (interaction.isModalSubmit()) {
-      // Zapis typu meczu
       if (interaction.customId.startsWith('modal_bet_')) {
         const mId = interaction.customId.replace('modal_bet_', '');
         const match = memoryDB.matches[mId];
@@ -392,7 +408,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Zwycięzca: **${winner}**\n• Wynik: **${score}**`, ephemeral: true });
       }
 
-      // Zapis Pick'Em
       if (interaction.customId.startsWith('modal_pickem_')) {
         const stage = interaction.customId.replace('modal_pickem_', '');
         const t30 = interaction.fields.getTextInputValue('p_30').trim();
@@ -417,4 +432,3 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-      
