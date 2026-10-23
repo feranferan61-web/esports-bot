@@ -366,6 +366,13 @@ client.on('interactionCreate', async interaction => {
         await saveDB();
         return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage.toUpperCase()}**! Przyznano punkty dla **${count}** graczy.` });
       }
+
+      // --- ADMIN: /resetranking ---
+      if (commandName === 'resetranking') {
+        memoryDB.users = {};
+        await saveDB();
+        return interaction.reply({ content: '⚠️ **Zresetowano ranking!** Punkty i statystyki wszystkich graczy zostały wyczyszczone.', ephemeral: true });
+      }
     }
 
     // --- OBSŁUGA SELECT MENU ---
