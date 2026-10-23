@@ -112,7 +112,13 @@ const slashCommands = [
     .addStringOption(opt => opt.setName('oficjalne_30').setDescription('Oficjalne 3-0 (2 drużyny po przecinku)').setRequired(true))
     .addStringOption(opt => opt.setName('oficjalne_03').setDescription('Oficjalne 0-3 (2 drużyny po przecinku)').setRequired(true))
     .addStringOption(opt => opt.setName('oficjalne_awans').setDescription('Oficjalne awanse (6 drużyn po przecinku)').setRequired(true))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+
+  new SlashCommandBuilder()
+    .setName('resetranking')
+    .setDescription('⚠️ [Admin] Resetuje punkty i statystyki wszystkich graczy do zera')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
 ].map(cmd => cmd.toJSON());
 
 module.exports = slashCommands;
+  
