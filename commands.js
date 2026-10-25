@@ -19,6 +19,10 @@ const slashCommands = [
     .setDescription('Wyświetla tabelę liderów z TOP 10 graczy na serwerze'),
 
   new SlashCommandBuilder()
+    .setName('moj_kanal')
+    .setDescription('Tworzy Twój własny, prywatny kanał do typowania i sprawdzania wyników'),
+
+  new SlashCommandBuilder()
     .setName('druzyny')
     .setDescription('Pokazuje drużyny, które grają w konkretnym stage Major\'a')
     .addStringOption(opt => 
@@ -121,4 +125,4 @@ const slashCommands = [
 ].map(cmd => cmd.toJSON());
 
 module.exports = slashCommands;
-  
+      
