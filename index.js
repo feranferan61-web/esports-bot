@@ -463,3 +463,10 @@ client.on('interactionCreate', async interaction => {
 
         if (!memoryDB.pickems.userPicks[interaction.user.id]) {
           memoryDB.pickems.userPicks[interaction.user.id] = 
+              } catch (e) {
+    console.error('❌ Błąd interakcji:', e);
+  }
+});
+
+client.login(process.env.DISCORD_TOKEN);
+      
