@@ -58,8 +58,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Bot Major 2026 dziala 24/7!\n');
 });
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🌐 Serwer HTTP na porcie ${PORT}`));
+server.listen(process.env.PORT || 3000);
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -121,26 +120,24 @@ client.on('interactionCreate', async interaction => {
           selectOptions.push({ label: `Mecz ID ${mId}: ${m.details} (${m.format})`, value: `bet_match_${mId}` });
         }
         if (selectOptions.length === 0) {
-          return interaction.reply({ content: 'Brak dostępnych meczów do typowania w tym momencie.', ephemeral: true });
+          return interaction.reply({ content: 'Brak dostępnych meczów do typowania.', ephemeral: true });
         }
         const row = new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('select_match_menu').setPlaceholder('Wybierz mecz do obstawienia...').addOptions(selectOptions)
+          new StringSelectMenuBuilder().setCustomId('select_match_menu').setPlaceholder('Wybierz mecz...').addOptions(selectOptions)
         );
-        return interaction.reply({ content: 'Wybierz mecz z poniższej listy:', components: [row], ephemeral: true });
+        return interaction.reply({ content: 'Wybierz mecz:', components: [row], ephemeral: true });
       }
 
       if (commandName === 'mojetypy') {
         const userId = interaction.user.id;
         const userBets = memoryDB.bets[userId];
         if (!userBets || Object.keys(userBets).length === 0) {
-          return interaction.reply({ content: '📋 Nie masz jeszcze żadnych typów na koncie.', ephemeral: true });
+          return interaction.reply({ content: 'Nie masz jeszcze typów.', ephemeral: true });
         }
-        let desc = '### 🎯 Historia Twoich typów:\n';
+        let desc = '### Twoje typy:\n';
         for (const [mId, b] of Object.entries(userBets)) {
           const match = memoryDB.matches[mId];
-          const matchName = match ? match.details : `Usunięty mecz ID ${mId}`;
-          const resultText = b.result !== undefined ? ` (Wynik: **${b.result === 3 ? '+3 pkt' : b.result === 1 ? '+1 pkt' : '0 pkt'}**)` : ' *(Oczekuje na rozliczenie)*';
-          desc += `• **${matchName}**\n  ↳ Typ: Zwycięzca: \`${b.winner}\` | Wynik: \`${b.score}\`${resultText}\n`;
+          desc += `• **${match ? match.details : 'Mecz ' + mId}** -> ${b.winner} (${b.score})\n`;
         }
         return interaction.reply({ content: desc, ephemeral: true });
       }
@@ -148,238 +145,133 @@ client.on('interactionCreate', async interaction => {
       if (commandName === 'profil') {
         const userId = interaction.user.id;
         const u = memoryDB.users[userId] || { points: 0, totalBets: 0, correctBets: 0 };
-        const accuracy = u.totalBets > 0 ? ((u.correctBets / u.totalBets) * 100).toFixed(1) : 0;
-
-        return interaction.reply({
-          content: `📊 **Twój Profil Typera:**\n` +
-                   `🏆 Punkty: **${u.points} pkt**\n` +
-                   `🎯 Obstawione mecze: **${u.totalBets}**\n` +
-                   `✅ Trafione typy: **${u.correctBets}**\n` +
-                   `📈 Skuteczność: **${accuracy}%**`,
-          ephemeral: true
-        });
+        const acc = u.totalBets > 0 ? ((u.correctBets / u.totalBets) * 100).toFixed(1) : 0;
+        return interaction.reply({ content: `Punkty: ${u.points} | Trafienia: ${u.correctBets}/${u.totalBets} (${acc}%)`, ephemeral: true });
       }
 
       if (commandName === 'ranking') {
-        const sorted = Object.entries(memoryDB.users)
-          .sort((a, b) => (b[1].points || 0) - (a[1].points || 0))
-          .slice(0, 10);
-
-        if (sorted.length === 0) {
-          return interaction.reply({ content: '🏆 Ranking jest obecnie pusty. Nikt jeszcze nie zdobył punktów!', ephemeral: true });
-        }
-
+        const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
+        if (sorted.length === 0) return interaction.reply({ content: 'Ranking jest pusty.', ephemeral: true });
         let desc = '';
-        sorted.forEach(([id, data], i) => {
-          const acc = data.totalBets > 0 ? ((data.correctBets / data.totalBets) * 100).toFixed(0) : 0;
-          desc += `${i + 1}. <@${id}> — **${data.points || 0} pkt** (Skuteczność: ${acc}%)\n`;
-        });
-
-        const embed = new EmbedBuilder()
-          .setTitle('🏆 Tabela Liderów — TOP 10')
-          .setDescription(desc)
-          .setColor('#ffd700');
-
-        return interaction.reply({ embeds: [embed] });
+        sorted.forEach(([id, data], i) => { desc += `${i + 1}. <@${id}> — ${data.points || 0} pkt\n`; });
+        return interaction.reply({ embeds: [new EmbedBuilder().setTitle('TOP 10').setDescription(desc)] });
       }
 
       if (commandName === 'moj_kanal') {
         const guild = interaction.guild;
         const user = interaction.user;
-
         if (!memoryDB.userChannels) memoryDB.userChannels = {};
-
         if (memoryDB.userChannels[user.id]) {
-          const existingChannel = guild.channels.cache.get(memoryDB.userChannels[user.id]);
-          if (existingChannel) {
-            return interaction.reply({ content: `ℹ️ Masz już swój prywatny kanał: <#${existingChannel.id}>!`, ephemeral: true });
-          }
+          const ch = guild.channels.cache.get(memoryDB.userChannels[user.id]);
+          if (ch) return interaction.reply({ content: `Masz już kanał: <#${ch.id}>`, ephemeral: true });
         }
-
-        const channelName = `typy-${user.username}`.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        try {
-          const privateChannel = await guild.channels.create({
-            name: channelName,
-            type: 0,
-            topic: `Prywatny kanał do typowania dla gracza ${user.tag}`,
-            permissionOverwrites: [
-              {
-                id: guild.id,
-                deny: ['ViewChannel'],
-              },
-              {
-                id: user.id,
-                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
-              },
-              {
-                id: client.user.id,
-                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
-              },
-            ],
-          });
-
-          memoryDB.userChannels[user.id] = privateChannel.id;
-          await saveDB();
-
-          const embed = new EmbedBuilder()
-            .setTitle(`🎯 Twój prywatny kącik typera, ${user.username}!`)
-            .setDescription('Tutaj możesz w spokoju używać komend `/mecze`, `/mojetypy`, `/pickem` czy `/ranking`.\n\n**Nikt inny z serwera nie widzi tego kanału**, więc Twoje typy są całkowicie bezpieczne i poufne!')
-            .setColor('#00ff00');
-
-          await privateChannel.send({ content: `<@${user.id}>`, embeds: [embed] });
-
-          return interaction.reply({ content: `✅ Stworzyłem dla Ciebie prywatny kanał: <#${privateChannel.id}>!`, ephemeral: true });
-        } catch (error) {
-          console.error('Błąd tworzenia prywatnego kanału:', error);
-          return interaction.reply({ content: '❌ Nie udało się utworzyć kanału. Upewnij się, że bot ma uprawnienie "Zarządzanie kanałami" (Manage Channels) w ustawieniach serwera.', ephemeral: true });
-        }
+        const channel = await guild.channels.create({
+          name: `typy-${user.username}`.toLowerCase().replace(/[^a-z0-9]/g, ''),
+          type: 0,
+          permissionOverwrites: [
+            { id: guild.id, deny: ['ViewChannel'] },
+            { id: user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'] },
+            { id: client.user.id, allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'] }
+          ]
+        });
+        memoryDB.userChannels[user.id] = channel.id;
+        await saveDB();
+        return interaction.reply({ content: `Stworzono kanał: <#${channel.id}>`, ephemeral: true });
       }
 
       if (commandName === 'druzyny') {
         const stage = options.getString('stage');
-        const stageData = memoryDB.pickems.stages[stage];
-        if (!stageData || !stageData.teams || stageData.teams.length === 0) {
-          return interaction.reply({ content: `❌ Faza **${stage.toUpperCase()}** nie została jeszcze skonfigurowana przez administratora.`, ephemeral: true });
-        }
-        const list = stageData.teams.map((t, i) => `${i + 1}. **${t}**`).join('\n');
-        const embed = new EmbedBuilder().setTitle(`🛡️ Drużyny w fazie ${stage.toUpperCase()}`).setDescription(list).setColor('#0099ff');
-        return interaction.reply({ embeds: [embed], ephemeral: false });
+        const data = memoryDB.pickems.stages[stage];
+        if (!data || !data.teams?.length) return interaction.reply({ content: 'Faza nieskonfigurowana.', ephemeral: true });
+        return interaction.reply({ content: data.teams.join(', ') });
       }
 
       if (commandName === 'pickem') {
         const stage = options.getString('stage');
-        const stageData = memoryDB.pickems.stages[stage];
-        if (!stageData || !stageData.teams || stageData.teams.length === 0) {
-          return interaction.reply({ content: `❌ Faza **${stage}** nie jest skonfigurowana.`, ephemeral: true });
-        }
-        if (stageData.locked) {
-          return interaction.reply({ content: `🔒 Typowanie dla tej fazy jest zablokowane.`, ephemeral: true });
-        }
-
-        const modal = new ModalBuilder().setCustomId(`modal_pickem_${stage}`).setTitle(`Pick'Em: ${stage.toUpperCase()}`);
-        const t30 = new TextInputBuilder().setCustomId('p_30').setLabel('Bilans 3-0 (2 drużyny po przecinku)').setStyle(TextInputStyle.Short).setRequired(true);
-        const t03 = new TextInputBuilder().setCustomId('p_03').setLabel('Bilans 0-3 (2 drużyny po przecinku)').setStyle(TextInputStyle.Short).setRequired(true);
-        const tAdv = new TextInputBuilder().setCustomId('p_adv').setLabel('Awans do kolejnego stage (6 drużyn)').setStyle(TextInputStyle.Paragraph).setRequired(true);
-
+        const data = memoryDB.pickems.stages[stage];
+        if (!data || !data.teams?.length) return interaction.reply({ content: 'Faza nieskonfigurowana.', ephemeral: true });
+        if (data.locked) return interaction.reply({ content: 'Zablokowane.', ephemeral: true });
+        const modal = new ModalBuilder().setCustomId(`modal_pickem_${stage}`).setTitle(`Pick'Em ${stage}`);
         modal.addComponents(
-          new ActionRowBuilder().addComponents(t30),
-          new ActionRowBuilder().addComponents(t03),
-          new ActionRowBuilder().addComponents(tAdv)
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_30').setLabel('3-0').setStyle(TextInputStyle.Short).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_03').setLabel('0-3').setStyle(TextInputStyle.Short).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_adv').setLabel('Awans (6)').setStyle(TextInputStyle.Paragraph).setRequired(true))
         );
         return await interaction.showModal(modal);
       }
 
       if (commandName === 'dodajmecz') {
-        const teamA = options.getString('druzyna_a');
-        const teamB = options.getString('druzyna_b');
-        const format = options.getString('format');
-        const dateStr = options.getString('data_zamkniecia');
-        const closeDate = parseWarsawDate(dateStr);
-
-        if (!closeDate) {
-          return interaction.reply({ content: '❌ Błędny format daty! Użyj dokładnie formatu: `DD-MM-YYYY HH:mm` (np. `25-03-2026 15:30`).', ephemeral: true });
-        }
-
-        const mId = memoryDB.nextMatchId.toString();
-        memoryDB.nextMatchId++;
-        memoryDB.matches[mId] = {
-          details: `${teamA} vs ${teamB}`,
-          teamA, teamB, format,
-          closeDate: closeDate.toISOString(),
-          locked: false
-        };
+        const tA = options.getString('druzyna_a'), tB = options.getString('druzyna_b'), fmt = options.getString('format');
+        const closeDate = parseWarsawDate(options.getString('data_zamkniecia'));
+        if (!closeDate) return interaction.reply({ content: 'Błędna data (DD-MM-YYYY HH:mm).', ephemeral: true });
+        const mId = memoryDB.nextMatchId++.toString();
+        memoryDB.matches[mId] = { details: `${tA} vs ${tB}`, teamA: tA, teamB: tB, format: fmt, closeDate: closeDate.toISOString(), locked: false };
         await saveDB();
-        return interaction.reply({ content: `✅ Dodano mecz ID **${mId}**: **${teamA} vs ${teamB}** (${format}). Zamknięcie: \`${dateStr}\` (Warszawa).` });
+        return interaction.reply({ content: `Dodano mecz ID ${mId}` });
       }
 
       if (commandName === 'edytujmecz') {
         const mId = options.getInteger('id').toString();
-        const match = memoryDB.matches[mId];
-        if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu o takim ID.', ephemeral: true });
-
-        const teamA = options.getString('druzyna_a');
-        const teamB = options.getString('druzyna_b');
-        const format = options.getString('format');
-        const dateStr = options.getString('data_zamkniecia');
-
-        if (teamA) match.teamA = teamA;
-        if (teamB) match.teamB = teamB;
-        if (teamA || teamB) match.details = `${match.teamA} vs ${match.teamB}`;
-        if (format) match.format = format;
-        if (dateStr) {
-          const newDate = parseWarsawDate(dateStr);
-          if (!newDate) return interaction.reply({ content: '❌ Błędny format daty (`DD-MM-YYYY HH:mm`).', ephemeral: true });
-          match.closeDate = newDate.toISOString();
-          match.locked = false;
+        const m = memoryDB.matches[mId];
+        if (!m) return interaction.reply({ content: 'Nie znaleziono meczu.', ephemeral: true });
+        if (options.getString('druzyna_a')) m.teamA = options.getString('druzyna_a');
+        if (options.getString('druzyna_b')) m.teamB = options.getString('druzyna_b');
+        m.details = `${m.teamA} vs ${m.teamB}`;
+        if (options.getString('format')) m.format = options.getString('format');
+        const dStr = options.getString('data_zamkniecia');
+        if (dStr) {
+          const d = parseWarsawDate(dStr);
+          if (d) { m.closeDate = d.toISOString(); m.locked = false; }
         }
-
         await saveDB();
-        return interaction.reply({ content: `✅ Zaktualizowano mecz ID **${mId}** (**${match.details}**).` });
+        return interaction.reply({ content: `Zaktualizowano mecz ID ${mId}` });
       }
 
       if (commandName === 'usunmecz') {
         const mId = options.getInteger('id').toString();
-        if (!memoryDB.matches[mId]) return interaction.reply({ content: '❌ Nie znaleziono meczu o takim ID.', ephemeral: true });
-
         delete memoryDB.matches[mId];
         await saveDB();
-        return interaction.reply({ content: `🗑️ Usunięto mecz ID **${mId}**.` });
+        return interaction.reply({ content: `Usunięto mecz ID ${mId}` });
       }
 
       if (commandName === 'rozliczmecz') {
         const mId = options.getInteger('id').toString();
         const winner = options.getString('zwyciezca').trim().toLowerCase();
-        const exactScore = options.getString('wynik').trim().replace(/\s+/g, '');
-
+        const score = options.getString('wynik').trim().replace(/\s+/g, '');
         const match = memoryDB.matches[mId];
-        if (!match) return interaction.reply({ content: '❌ Nie znaleziono meczu o takim ID.', ephemeral: true });
+        if (!match) return interaction.reply({ content: 'Nie znaleziono meczu.', ephemeral: true });
 
-        let processed = 0;
-        for (const [userId, userBets] of Object.entries(memoryDB.bets)) {
-          const bet = userBets[mId];
-          if (!bet) continue;
-
-          if (!memoryDB.users[userId]) {
-            memoryDB.users[userId] = { points: 0, totalBets: 0, correctBets: 0 };
-          }
-          memoryDB.users[userId].totalBets++;
-
-          const uWinner = bet.winner.trim().toLowerCase();
-          const uScore = bet.score.trim().replace(/\s+/g, '');
-
-          if (uWinner === winner) {
-            if (uScore === exactScore) {
-              memoryDB.users[userId].points += 3;
-              memoryDB.users[userId].correctBets++;
-              bet.result = 3;
+        for (const [uId, bets] of Object.entries(memoryDB.bets)) {
+          const b = bets[mId];
+          if (!b) continue;
+          if (!memoryDB.users[uId]) memoryDB.users[uId] = { points: 0, totalBets: 0, correctBets: 0 };
+          memoryDB.users[uId].totalBets++;
+          if (b.winner.trim().toLowerCase() === winner) {
+            if (b.score.trim().replace(/\s+/g, '') === score) {
+              memoryDB.users[uId].points += 3;
+              memoryDB.users[uId].correctBets++;
+              b.result = 3;
             } else {
-              memoryDB.users[userId].points += 1;
-              memoryDB.users[userId].correctBets++;
-              bet.result = 1;
+              memoryDB.users[uId].points += 1;
+              memoryDB.users[uId].correctBets++;
+              b.result = 1;
             }
           } else {
-            bet.result = 0;
+            b.result = 0;
           }
-          processed++;
         }
-
         delete memoryDB.matches[mId];
         await saveDB();
-
-        return interaction.reply({ content: `🎉 Rozliczono mecz ID **${mId}** (Zwycięzca: **${winner.toUpperCase()}**, Wynik: **${exactScore}**).\nPrzeliczono punkty dla **${processed}** graczy i usunięto mecz z listy!` });
+        return interaction.reply({ content: `Rozliczono mecz ID ${mId}` });
       }
 
       if (commandName === 'utworzpickem') {
         const stage = options.getString('stage');
         const teams = options.getString('druzyny').split(',').map(t => t.trim()).filter(Boolean);
-
-        if (!memoryDB.pickems.stages[stage]) {
-          memoryDB.pickems.stages[stage] = { locked: false, teams: [] };
-        }
+        if (!memoryDB.pickems.stages[stage]) memoryDB.pickems.stages[stage] = { locked: false, teams: [] };
         memoryDB.pickems.stages[stage].teams = teams;
         await saveDB();
-        return interaction.reply({ content: `✅ Skonfigurowano drużyny dla fazy **${stage.toUpperCase()}** (${teams.length} drużyn).` });
+        return interaction.reply({ content: `Skonfigurowano ${stage}` });
       }
 
       if (commandName === 'rozliczpickem') {
@@ -388,85 +280,64 @@ client.on('interactionCreate', async interaction => {
         const off03 = options.getString('oficjalne_03').split(',').map(t => t.trim().toLowerCase());
         const offAdv = options.getString('oficjalne_awans').split(',').map(t => t.trim().toLowerCase());
 
-        let count = 0;
-        for (const [userId, userStages] of Object.entries(memoryDB.pickems.userPicks || {})) {
-          const p = userStages[stage];
+        for (const [uId, stages] of Object.entries(memoryDB.pickems.userPicks || {})) {
+          const p = stages[stage];
           if (!p) continue;
-
-          if (!memoryDB.users[userId]) {
-            memoryDB.users[userId] = { points: 0, totalBets: 0, correctBets: 0 };
-          }
-
-          let earned = 0;
-          p.threeZero?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off30.includes(t)) earned += 3; });
-          p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off03.includes(t)) earned += 3; });
-          p.advancing?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (offAdv.includes(t)) earned += 1; });
-
-          memoryDB.users[userId].points += earned;
-          count++;
+          if (!memoryDB.users[uId]) memoryDB.users[uId] = { points: 0, totalBets: 0, correctBets: 0 };
+          let pts = 0;
+          p.threeZero?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off30.includes(t)) pts += 3; });
+          p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off03.includes(t)) pts += 3; });
+          p.advancing?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (offAdv.includes(t)) pts += 1; });
+          memoryDB.users[uId].points += pts;
         }
-
         await saveDB();
-        return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage.toUpperCase()}**! Przyznano punkty dla **${count}** graczy.` });
+        return interaction.reply({ content: `Rozliczono Pick'Em dla ${stage}` });
       }
 
       if (commandName === 'resetranking') {
         memoryDB.users = {};
         await saveDB();
-        return interaction.reply({ content: '⚠️ **Zresetowano ranking!** Punkty i statystyki wszystkich graczy zostały wyczyszczone.', ephemeral: true });
+        return interaction.reply({ content: 'Zresetowano ranking.', ephemeral: true });
       }
-    }
-
-    else if (interaction.isStringSelectMenu()) {
+    } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_match_menu') {
         const mId = interaction.values[0].replace('bet_match_', '');
         const match = memoryDB.matches[mId];
-        if (!match || match.locked) {
-          return interaction.reply({ content: '❌ Ten mecz już nie istnieje lub został zablokowany.', ephemeral: true });
-        }
-
+        if (!match || match.locked) return interaction.reply({ content: 'Mecz niedostępny.', ephemeral: true });
         const modal = new ModalBuilder().setCustomId(`modal_bet_${mId}`).setTitle(`Obstaw: ${match.details}`);
-        const tWinner = new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (${match.teamA} lub ${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(true);
-        const tScore = new TextInputBuilder().setCustomId('b_score').setLabel(`Dokładny wynik (${match.format}: np. 13-8)`).setStyle(TextInputStyle.Short).setRequired(true);
-
         modal.addComponents(
-          new ActionRowBuilder().addComponents(tWinner),
-          new ActionRowBuilder().addComponents(tScore)
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (${match.teamA}/${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(true)),
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_score').setLabel(`Wynik (${match.format})`).setStyle(TextInputStyle.Short).setRequired(true))
         );
         return await interaction.showModal(modal);
       }
-    }
-
-    else if (interaction.isModalSubmit()) {
+    } else if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('modal_bet_')) {
         const mId = interaction.customId.replace('modal_bet_', '');
         const match = memoryDB.matches[mId];
-        if (!match || match.locked) {
-          return interaction.reply({ content: '❌ Mecz jest zablokowany lub niedostępny.', ephemeral: true });
-        }
-
+        if (!match || match.locked) return interaction.reply({ content: 'Mecz zablokowany.', ephemeral: true });
         const winner = interaction.fields.getTextInputValue('b_winner').trim();
         const score = interaction.fields.getTextInputValue('b_score').trim();
-
         if (!memoryDB.bets[interaction.user.id]) memoryDB.bets[interaction.user.id] = {};
         memoryDB.bets[interaction.user.id][mId] = { winner, score };
-
         await saveDB();
-        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Zwycięzca: **${winner}**\n• Wynik: **${score}**`, ephemeral: true });
+        return interaction.reply({ content: 'Zapisano typ!', ephemeral: true });
       }
-
       if (interaction.customId.startsWith('modal_pickem_')) {
         const stage = interaction.customId.replace('modal_pickem_', '');
         const t30 = interaction.fields.getTextInputValue('p_30').trim();
         const t03 = interaction.fields.getTextInputValue('p_03').trim();
         const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-
-        if (!memoryDB.pickems.userPicks[interaction.user.id]) {
-          memoryDB.pickems.userPicks[interaction.user.id] = 
-              } catch (e) {
-    console.error('❌ Błąd interakcji:', e);
+        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
+        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
+        await saveDB();
+        return interaction.reply({ content: 'Zapisano Pick\'Em!', ephemeral: true });
+      }
+    }
+  } catch (err) {
+    console.error('Błąd:', err);
   }
 });
 
 client.login(process.env.DISCORD_TOKEN);
-      
+            
