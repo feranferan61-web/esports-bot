@@ -114,7 +114,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
 
-      // 1. /mecze
       if (commandName === 'mecze') {
         const selectOptions = [];
         for (const [mId, m] of Object.entries(memoryDB.matches)) {
@@ -130,7 +129,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: 'Wybierz mecz z poniższej listy:', components: [row], ephemeral: true });
       }
 
-      // 2. /mojetypy
       if (commandName === 'mojetypy') {
         const userId = interaction.user.id;
         const userBets = memoryDB.bets[userId];
@@ -147,7 +145,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
-      // 3. /profil
       if (commandName === 'profil') {
         const userId = interaction.user.id;
         const u = memoryDB.users[userId] || { points: 0, totalBets: 0, correctBets: 0 };
@@ -163,7 +160,6 @@ client.on('interactionCreate', async interaction => {
         });
       }
 
-      // 4. /ranking
       if (commandName === 'ranking') {
         const sorted = Object.entries(memoryDB.users)
           .sort((a, b) => (b[1].points || 0) - (a[1].points || 0))
@@ -187,14 +183,12 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed] });
       }
 
-      // 5. /moj_kanal
       if (commandName === 'moj_kanal') {
         const guild = interaction.guild;
         const user = interaction.user;
 
         if (!memoryDB.userChannels) memoryDB.userChannels = {};
 
-        // Jeśli gracz ma już aktywny kanał, podajemy do niego odnośnik
         if (memoryDB.userChannels[user.id]) {
           const existingChannel = guild.channels.cache.get(memoryDB.userChannels[user.id]);
           if (existingChannel) {
@@ -242,7 +236,6 @@ client.on('interactionCreate', async interaction => {
         }
       }
 
-      // 6. /druzyny
       if (commandName === 'druzyny') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
@@ -254,7 +247,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: false });
       }
 
-      // 7. /pickem
       if (commandName === 'pickem') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
@@ -278,7 +270,6 @@ client.on('interactionCreate', async interaction => {
         return await interaction.showModal(modal);
       }
 
-      // --- ADMIN: /dodajmecz ---
       if (commandName === 'dodajmecz') {
         const teamA = options.getString('druzyna_a');
         const teamB = options.getString('druzyna_b');
@@ -302,7 +293,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `✅ Dodano mecz ID **${mId}**: **${teamA} vs ${teamB}** (${format}). Zamknięcie: \`${dateStr}\` (Warszawa).` });
       }
 
-      // --- ADMIN: /edytujmecz ---
       if (commandName === 'edytujmecz') {
         const mId = options.getInteger('id').toString();
         const match = memoryDB.matches[mId];
@@ -328,7 +318,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `✅ Zaktualizowano mecz ID **${mId}** (**${match.details}**).` });
       }
 
-      // --- ADMIN: /usunmecz ---
       if (commandName === 'usunmecz') {
         const mId = options.getInteger('id').toString();
         if (!memoryDB.matches[mId]) return interaction.reply({ content: '❌ Nie znaleziono meczu o takim ID.', ephemeral: true });
@@ -338,7 +327,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `🗑️ Usunięto mecz ID **${mId}**.` });
       }
 
-      // --- ADMIN: /rozliczmecz ---
       if (commandName === 'rozliczmecz') {
         const mId = options.getInteger('id').toString();
         const winner = options.getString('zwyciezca').trim().toLowerCase();
@@ -382,7 +370,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `🎉 Rozliczono mecz ID **${mId}** (Zwycięzca: **${winner.toUpperCase()}**, Wynik: **${exactScore}**).\nPrzeliczono punkty dla **${processed}** graczy i usunięto mecz z listy!` });
       }
 
-      // --- ADMIN: /utworzpickem ---
       if (commandName === 'utworzpickem') {
         const stage = options.getString('stage');
         const teams = options.getString('druzyny').split(',').map(t => t.trim()).filter(Boolean);
@@ -395,7 +382,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `✅ Skonfigurowano drużyny dla fazy **${stage.toUpperCase()}** (${teams.length} drużyn).` });
       }
 
-      // --- ADMIN: /rozliczpickem ---
       if (commandName === 'rozliczpickem') {
         const stage = options.getString('stage');
         const off30 = options.getString('oficjalne_30').split(',').map(t => t.trim().toLowerCase());
@@ -424,7 +410,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: `🎉 Rozliczono Pick'Em dla **${stage.toUpperCase()}**! Przyznano punkty dla **${count}** graczy.` });
       }
 
-      // --- ADMIN: /resetranking ---
       if (commandName === 'resetranking') {
         memoryDB.users = {};
         await saveDB();
@@ -432,7 +417,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // --- OBSŁUGA SELECT MENU ---
     else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'select_match_menu') {
         const mId = interaction.values[0].replace('bet_match_', '');
@@ -453,7 +437,6 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
-    // --- OBSŁUGA FORMULARZY MODAL ---
     else if (interaction.isModalSubmit()) {
       if (interaction.customId.startsWith('modal_bet_')) {
         const mId = interaction.customId.replace('modal_bet_', '');
@@ -469,4 +452,14 @@ client.on('interactionCreate', async interaction => {
         memoryDB.bets[interaction.user.id][mId] = { winner, score };
 
         await saveDB();
-        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Zwycięzca:
+        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Zwycięzca: **${winner}**\n• Wynik: **${score}**`, ephemeral: true });
+      }
+
+      if (interaction.customId.startsWith('modal_pickem_')) {
+        const stage = interaction.customId.replace('modal_pickem_', '');
+        const t30 = interaction.fields.getTextInputValue('p_30').trim();
+        const t03 = interaction.fields.getTextInputValue('p_03').trim();
+        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
+
+        if (!memoryDB.pickems.userPicks[interaction.user.id]) {
+          memoryDB.pickems.userPicks[interaction.user.id] = 
