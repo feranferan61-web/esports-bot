@@ -204,7 +204,10 @@ client.on('interactionCreate', async interaction => {
         const tA = options.getString('druzyna_a'), tB = options.getString('druzyna_b'), fmt = options.getString('format');
         const closeDate = parseWarsawDate(options.getString('data_zamkniecia'));
         if (!closeDate) return interaction.reply({ content: 'Błędna data (DD-MM-YYYY HH:mm).', ephemeral: true });
-        const mId = memoryDB.nextMatchId++.toString();
+        
+        const mId = memoryDB.nextMatchId.toString();
+        memoryDB.nextMatchId += 1;
+
         memoryDB.matches[mId] = { details: `${tA} vs ${tB}`, teamA: tA, teamB: tB, format: fmt, closeDate: closeDate.toISOString(), locked: false };
         await saveDB();
         return interaction.reply({ content: `Dodano mecz ID ${mId}` });
@@ -340,4 +343,4 @@ client.on('interactionCreate', async interaction => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-            
+    
