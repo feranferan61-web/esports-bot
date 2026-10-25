@@ -13,6 +13,7 @@ let memoryDB = {
   users: {},
   bets: {},
   pickems: { stages: {}, userPicks: {} },
+  userChannels: {},
   nextMatchId: 1
 };
 
@@ -32,6 +33,7 @@ async function initDB() {
           stages: loaded.pickems?.stages || {},
           userPicks: loaded.pickems?.userPicks || {}
         },
+        userChannels: loaded.userChannels || {},
         nextMatchId: loaded.nextMatchId || 1
       };
     }
@@ -185,7 +187,62 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed] });
       }
 
-      // 5. /druzyny
+      // 5. /moj_kanal
+      if (commandName === 'moj_kanal') {
+        const guild = interaction.guild;
+        const user = interaction.user;
+
+        if (!memoryDB.userChannels) memoryDB.userChannels = {};
+
+        // Jeśli gracz ma już aktywny kanał, podajemy do niego odnośnik
+        if (memoryDB.userChannels[user.id]) {
+          const existingChannel = guild.channels.cache.get(memoryDB.userChannels[user.id]);
+          if (existingChannel) {
+            return interaction.reply({ content: `ℹ️ Masz już swój prywatny kanał: <#${existingChannel.id}>!`, ephemeral: true });
+          }
+        }
+
+        const channelName = `typy-${user.username}`.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        try {
+          const privateChannel = await guild.channels.create({
+            name: channelName,
+            type: 0,
+            topic: `Prywatny kanał do typowania dla gracza ${user.tag}`,
+            permissionOverwrites: [
+              {
+                id: guild.id,
+                deny: ['ViewChannel'],
+              },
+              {
+                id: user.id,
+                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory'],
+              },
+              {
+                id: client.user.id,
+                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory', 'ManageChannels'],
+              },
+            ],
+          });
+
+          memoryDB.userChannels[user.id] = privateChannel.id;
+          await saveDB();
+
+          const embed = new EmbedBuilder()
+            .setTitle(`🎯 Twój prywatny kącik typera, ${user.username}!`)
+            .setDescription('Tutaj możesz w spokoju używać komend `/mecze`, `/mojetypy`, `/pickem` czy `/ranking`.\n\n**Nikt inny z serwera nie widzi tego kanału**, więc Twoje typy są całkowicie bezpieczne i poufne!')
+            .setColor('#00ff00');
+
+          await privateChannel.send({ content: `<@${user.id}>`, embeds: [embed] });
+
+          return interaction.reply({ content: `✅ Stworzyłem dla Ciebie prywatny kanał: <#${privateChannel.id}>!`, ephemeral: true });
+        } catch (error) {
+          console.error('Błąd tworzenia prywatnego kanału:', error);
+          return interaction.reply({ content: '❌ Nie udało się utworzyć kanału. Upewnij się, że bot ma uprawnienie "Zarządzanie kanałami" (Manage Channels) w ustawieniach serwera.', ephemeral: true });
+        }
+      }
+
+      // 6. /druzyny
       if (commandName === 'druzyny') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
@@ -197,7 +254,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ embeds: [embed], ephemeral: false });
       }
 
-      // 6. /pickem
+      // 7. /pickem
       if (commandName === 'pickem') {
         const stage = options.getString('stage');
         const stageData = memoryDB.pickems.stages[stage];
@@ -412,30 +469,4 @@ client.on('interactionCreate', async interaction => {
         memoryDB.bets[interaction.user.id][mId] = { winner, score };
 
         await saveDB();
-        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Zwycięzca: **${winner}**\n• Wynik: **${score}**`, ephemeral: true });
-      }
-
-      if (interaction.customId.startsWith('modal_pickem_')) {
-        const stage = interaction.customId.replace('modal_pickem_', '');
-        const t30 = interaction.fields.getTextInputValue('p_30').trim();
-        const t03 = interaction.fields.getTextInputValue('p_03').trim();
-        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-
-        if (!memoryDB.pickems.userPicks[interaction.user.id]) {
-          memoryDB.pickems.userPicks[interaction.user.id] = {};
-        }
-        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
-
-        await saveDB();
-        return interaction.reply({ content: `✅ Zapisano Twoje typy Pick'Em dla fazy **${stage.toUpperCase()}**!`, ephemeral: true });
-      }
-    }
-  } catch (e) {
-    console.error('❌ Błąd interakcji:', e);
-    if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej akcji.', ephemeral: true }).catch(() => {});
-    }
-  }
-});
-
-client.login(process.env.DISCORD_TOKEN);
+        return interaction.reply({ content: `🎯 Zapisano Twój typ na mecz **${match.details}**!\n• Zwycięzca:
