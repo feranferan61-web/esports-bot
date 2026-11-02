@@ -2,8 +2,6 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectM
 const { Pool } = require('pg');
 const http = require('http');
 const slashCommands = require('./commands.js');
-const THEME_COLOR = '#8B0000'; // Ciemny czerwony (motyw PGL Major)
-
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -112,48 +110,31 @@ client.on('interactionCreate', async interaction => {
   try {
     await checkAndLockMatches();
 
-    if (!interaction.isChatInputCommand()) return;
+    if (interaction.isChatInputCommand()) {
+      const { commandName, options } = interaction;
+            // --- /mojpickem ---
+      if (commandName === 'mojpickem') {
+        const stage = options.getString('stage');
+        const userId = interaction.user.id;
 
-    const { commandName, options } = interaction;
+        const userStages = memoryDB.pickems?.userPicks?.[userId];
+        const userPick = userStages ? userStages[stage] : null;
 
-    if (commandName === 'mojpickem') {
-      const stage = options.getString('stage');
-      const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
+        if (!userPick) {
+          return interaction.reply({ content: `📋 Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, ephemeral: true });
+        }
 
-      if (!userPicks) {
-        return interaction.reply({ 
-          content: `❌ Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, 
-          ephemeral: true 
-        });
+        const embed = new EmbedBuilder()
+          .setTitle(`🎯 Twoje typy Pick'Em: ${stage.toUpperCase()}`)
+          .setColor('#0099ff')
+          .addFields(
+            { name: '🔥 Bilans 3-0', value: userPick.threeZero || 'Brak', inline: false },
+            { name: '❌ Bilans 0-3', value: userPick.zeroThree || 'Brak', inline: false },
+            { name: '🛡️ Awans do kolejnej fazy', value: userPick.advancing || 'Brak', inline: false }
+          );
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
-
-      const embed = new EmbedBuilder()
-        .setTitle(`🎯 Twoje typy Pick'Em — Faza ${stage.toUpperCase()}`)
-        .setColor(THEME_COLOR)
-        .addFields(
-          { name: '🔥 Bilans 3-0', value: userPicks.threeZero || '*Brak*', inline: true },
-          { name: '💀 Bilans 0-3', value: userPicks.zeroThree || '*Brak*', inline: true },
-          { name: '✅ Awans (3-1 / 3-2)', value: userPicks.advancing || '*Brak*', inline: false }
-        )
-        .setFooter({ text: 'PGL Major Singapore 2026 • Statystyki typerów' })
-        .setTimestamp();
-
-      return interaction.reply({ 
-        embeds: [embed], 
-        ephemeral: true 
-      });
-    }
-
-  } catch (err) {
-    console.error('Błąd w interactionCreate:', err);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
-    }
-  }
-});
-
-        
-    
       
 
       if (commandName === 'mecze') {
@@ -186,31 +167,20 @@ client.on('interactionCreate', async interaction => {
       }
 
             if (commandName === 'profil') {
-        const targetUser = options.getUser('gracz') || interaction.user;
-        const uData = memoryDB.users[targetUser.id] || { points: 0, matchStats: { total: 0, correct: 0 }, pickemStats: { total: 0, correct: 0 } };
-        
-        const mStats = uData.matchStats || { total: 0, correct: 0 };
-        const pStats = uData.pickemStats || { total: 0, correct: 0 };
+        const userId = interaction.user.id;
+        const u = memoryDB.users[userId] || { 
+          points: 0, 
+          matchStats: { total: 0, correct: 0 }, 
+          pickemStats: { total: 0, correct: 0 } 
+        };
+
+        const mStats = u.matchStats || { total: 0, correct: 0 };
+        const pStats = u.pickemStats || { total: 0, correct: 0 };
 
         const matchAcc = mStats.total > 0 ? ((mStats.correct / mStats.total) * 100).toFixed(1) : 0;
         const pickemAcc = pStats.total > 0 ? ((pStats.correct / pStats.total) * 100).toFixed(1) : 0;
 
-        const embed = new EmbedBuilder()
-          .setTitle(`📊 Profil Gracza — ${targetUser.username}`)
-          .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
-          .setColor(THEME_COLOR)
-          .addFields(
-            { name: '🏆 Punkty ogółem', value: `**${uData.points} pkt**`, inline: false },
-            { name: '⚔️ Typowanie Meczy', value: `Trafienia: **${mStats.correct}/${mStats.total}**\nSkuteczność: **${matchAcc}%**`, inline: true },
-            { name: '🎯 Pick\'Em', value: `Trafienia: **${pStats.correct}/${pStats.total}**\nSkuteczność: **${pickemAcc}%**`, inline: true }
-          )
-          .setFooter({ text: 'PGL Major Singapore 2026' })
-          .setTimestamp();
-
-        return interaction.reply({ embeds: [embed] });
-            }
-      
-      
+        return interaction.reply({
           content: `📊 **Twój Profil Typera:**\n` +
                    `🏆 Łączne punkty: **${u.points} pkt**\n\n` +
                    `📆 **Mecze:**\n` +
@@ -439,42 +409,16 @@ client.on('interactionCreate', async interaction => {
         await saveDB();
         return interaction.reply({ content: 'Zapisano typ!', ephemeral: true });
       }
-              if (interaction.customId.startsWith('modal_pickem_')) {
-          const stage = interaction.customId.split('_')[2];
-          const t30 = interaction.fields.getTextInputValue('p_30').trim();
-          const t03 = interaction.fields.getTextInputValue('p_03').trim();
-          const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-
-          // --- TUTAJ DODAJEMY WALIDACJĘ DUPLIKATÓW ---
-          const t30List = t30.split(',').map(t => t.trim()).filter(Boolean);
-          const t03List = t03.split(',').map(t => t.trim()).filter(Boolean);
-          const tAdvList = tAdv.split(',').map(t => t.trim()).filter(Boolean);
-
-          const allTeams = [...t30List, ...t03List, ...tAdvList];
-          const lowerCaseTeams = allTeams.map(t => t.toLowerCase());
-          const hasDuplicates = new Set(lowerCaseTeams).size !== lowerCaseTeams.length;
-
-          if (hasDuplicates) {
-            return interaction.reply({
-              content: '❌ **Błąd w typowaniu!** Ta sama drużyna nie może się powtórzyć w różnych bilansach (np. w 3-0 i w awansujących). Sprawdź swoje wpisy!',
-              ephemeral: true
-            });
-          }
-          // ------------------------------------------
-
-          if (!memoryDB.pickems.userPicks) memoryDB.pickems.userPicks = {};
-          if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
-          
-          memoryDB.pickems.userPicks[interaction.user.id][stage] = { 
-            threeZero: t30, 
-            zeroThree: t03, 
-            advancing: tAdv 
-          };
-          
-          await saveDB();
-          return interaction.reply({ content: `Zapisano Pick'Em!`, ephemeral: true });
-              }
-      
+      if (interaction.customId.startsWith('modal_pickem_')) {
+        const stage = interaction.customId.replace('modal_pickem_', '');
+        const t30 = interaction.fields.getTextInputValue('p_30').trim();
+        const t03 = interaction.fields.getTextInputValue('p_03').trim();
+        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
+        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
+        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
+        await saveDB();
+        return interaction.reply({ content: 'Zapisano Pick\'Em!', ephemeral: true });
+      }
     }
   } catch (err) {
     console.error('Błąd:', err);
