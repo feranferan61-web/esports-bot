@@ -112,6 +112,30 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
+            // --- /mojpickem ---
+      if (commandName === 'mojpickem') {
+        const stage = options.getString('stage');
+        const userId = interaction.user.id;
+
+        const userStages = memoryDB.pickems?.userPicks?.[userId];
+        const userPick = userStages ? userStages[stage] : null;
+
+        if (!userPick) {
+          return interaction.reply({ content: `📋 Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, ephemeral: true });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle(`🎯 Twoje typy Pick'Em: ${stage.toUpperCase()}`)
+          .setColor('#0099ff')
+          .addFields(
+            { name: '🔥 Bilans 3-0', value: userPick.threeZero || 'Brak', inline: false },
+            { name: '❌ Bilans 0-3', value: userPick.zeroThree || 'Brak', inline: false },
+            { name: '🛡️ Awans do kolejnej fazy', value: userPick.advancing || 'Brak', inline: false }
+          );
+
+        return interaction.reply({ embeds: [embed], ephemeral: true });
+      }
+      
 
       if (commandName === 'mecze') {
         const selectOptions = [];
