@@ -323,7 +323,6 @@ client.on('interactionCreate', async interaction => {
         await saveDB();
         return interaction.reply({ content: `Skonfigurowano ${stage}` });
       }
-
       if (commandName === 'rozliczpickem') {
         const stage = options.getString('stage');
         const off30 = options.getString('oficjalne_30').split(',').map(t => t.trim().toLowerCase());
@@ -333,16 +332,53 @@ client.on('interactionCreate', async interaction => {
         for (const [uId, stages] of Object.entries(memoryDB.pickems.userPicks || {})) {
           const p = stages[stage];
           if (!p) continue;
-          if (!memoryDB.users[uId]) memoryDB.users[uId] = { points: 0, totalBets: 0, correctBets: 0 };
+
+          if (!memoryDB.users[uId]) {
+            memoryDB.users[uId] = { points: 0, matchStats: { total: 0, correct: 0 }, pickemStats: { total: 0, correct: 0 } };
+          }
+          if (!memoryDB.users[uId].pickemStats) {
+            memoryDB.users[uId].pickemStats = { total: 0, correct: 0 };
+          }
+
           let pts = 0;
-          p.threeZero?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off30.includes(t)) pts += 3; });
-          p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (off03.includes(t)) pts += 3; });
-          p.advancing?.split(',').map(t => t.trim().toLowerCase()).forEach(t => { if (offAdv.includes(t)) pts += 1; });
+
+          // Rozliczanie 3-0
+          const t30List = p.threeZero?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
+          t30List.forEach(t => {
+            memoryDB.users[uId].pickemStats.total++;
+            if (off30.includes(t)) {
+              pts += 3;
+              memoryDB.users[uId].pickemStats.correct++;
+            }
+          });
+
+          // Rozliczanie 0-3
+          const t03List = p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
+          t03List.forEach(t => {
+            memoryDB.users[uId].pickemStats.total++;
+            if (off03.includes(t)) {
+              pts += 3;
+              memoryDB.users[uId].pickemStats.correct++;
+            }
+          });
+
+          // Rozliczanie awansów
+          const tAdvList = p.advancing?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
+          tAdvList.forEach(t => {
+            memoryDB.users[uId].pickemStats.total++;
+            if (offAdv.includes(t)) {
+              pts += 1;
+              memoryDB.users[uId].pickemStats.correct++;
+            }
+          });
+
           memoryDB.users[uId].points += pts;
         }
+
         await saveDB();
-        return interaction.reply({ content: `Rozliczono Pick'Em dla ${stage}` });
+        return interaction.reply({ content: `Rozliczono Pick'Em dla ${stage} i zaktualizowano statystyki!` });
       }
+      
 
       if (commandName === 'resetranking') {
         memoryDB.users = {};
