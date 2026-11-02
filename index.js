@@ -166,12 +166,35 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
-      if (commandName === 'profil') {
+            if (commandName === 'profil') {
         const userId = interaction.user.id;
-        const u = memoryDB.users[userId] || { points: 0, totalBets: 0, correctBets: 0 };
-        const acc = u.totalBets > 0 ? ((u.correctBets / u.totalBets) * 100).toFixed(1) : 0;
-        return interaction.reply({ content: `Punkty: ${u.points} | Trafienia: ${u.correctBets}/${u.totalBets} (${acc}%)`, ephemeral: true });
-      }
+        const u = memoryDB.users[userId] || { 
+          points: 0, 
+          matchStats: { total: 0, correct: 0 }, 
+          pickemStats: { total: 0, correct: 0 } 
+        };
+
+        const mStats = u.matchStats || { total: 0, correct: 0 };
+        const pStats = u.pickemStats || { total: 0, correct: 0 };
+
+        const matchAcc = mStats.total > 0 ? ((mStats.correct / mStats.total) * 100).toFixed(1) : 0;
+        const pickemAcc = pStats.total > 0 ? ((pStats.correct / pStats.total) * 100).toFixed(1) : 0;
+
+        return interaction.reply({
+          content: `📊 **Twój Profil Typera:**\n` +
+                   `🏆 Łączne punkty: **${u.points} pkt**\n\n` +
+                   `⚽ **Mecze:**\n` +
+                   `• Obstawione: **${mStats.total}**\n` +
+                   `• Trafione: **${mStats.correct}**\n` +
+                   `• Skuteczność: **${matchAcc}%**\n\n` +
+                   `🛡️ **Pick'Em:**\n` +
+                   `• Obstawione sloty: **${pStats.total}**\n` +
+                   `• Trafione typy: **${pStats.correct}**\n` +
+                   `• Skuteczność: **${pickemAcc}%**`,
+          ephemeral: true
+        });
+    }
+      
 
       if (commandName === 'ranking') {
         const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
