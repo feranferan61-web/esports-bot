@@ -117,23 +117,25 @@ client.on('interactionCreate', async interaction => {
             // --- /mojpickem ---
       if (commandName === 'mojpickem') {
         const stage = options.getString('stage');
-        const userId = interaction.user.id;
+        const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
 
-        const userStages = memoryDB.pickems?.userPicks?.[userId];
-        const userPick = userStages ? userStages[stage] : null;
-
-        if (!userPick) {
-          return interaction.reply({ content: `📋 Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, ephemeral: true });
+        if (!userPicks) {
+          return interaction.reply({ 
+            content: `❌ Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, 
+            ephemeral: true 
+          });
         }
 
         const embed = new EmbedBuilder()
-          .setTitle(`🎯 Twoje typy Pick'Em: ${stage.toUpperCase()}`)
-          .setColor('#0099ff')
+          .setTitle(`🎯 Twoje typy Pick'Em — Faza ${stage.toUpperCase()}`)
+          .setColor(THEME_COLOR)
           .addFields(
-            { name: '🔥 Bilans 3-0', value: userPick.threeZero || 'Brak', inline: false },
-            { name: '❌ Bilans 0-3', value: userPick.zeroThree || 'Brak', inline: false },
-            { name: '🛡️ Awans do kolejnej fazy', value: userPick.advancing || 'Brak', inline: false }
-          );
+            { name: '🔥 Bilans 3-0', value: userPicks.threeZero || '*Brak*', inline: true },
+            { name: '💀 Bilans 0-3', value: userPicks.zeroThree || '*Brak*', inline: true },
+            { name: '✅ Awans (3-1 / 3-2)', value: userPicks.advancing || '*Brak*', inline: false }
+          )
+          .setFooter({ text: 'PGL Major Singapore 2026 • Statystyki typerów' })
+          .setTimestamp();
 
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
@@ -168,21 +170,31 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
-            if (commandName === 'profil') {
-        const userId = interaction.user.id;
-        const u = memoryDB.users[userId] || { 
-          points: 0, 
-          matchStats: { total: 0, correct: 0 }, 
-          pickemStats: { total: 0, correct: 0 } 
-        };
-
-        const mStats = u.matchStats || { total: 0, correct: 0 };
-        const pStats = u.pickemStats || { total: 0, correct: 0 };
+      if (commandName === 'profil') {
+        const targetUser = options.getUser('gracz') || interaction.user;
+        const uData = memoryDB.users[targetUser.id] || { points: 0, matchStats: { total: 0, correct: 0 }, pickemStats: { total: 0, correct: 0 } };
+        
+        const mStats = uData.matchStats || { total: 0, correct: 0 };
+        const pStats = uData.pickemStats || { total: 0, correct: 0 };
 
         const matchAcc = mStats.total > 0 ? ((mStats.correct / mStats.total) * 100).toFixed(1) : 0;
         const pickemAcc = pStats.total > 0 ? ((pStats.correct / pStats.total) * 100).toFixed(1) : 0;
 
-        return interaction.reply({
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 Profil Gracza — ${targetUser.username}`)
+          .setThumbnail(targetUser.displayAvatarURL({ dynamic: true }))
+          .setColor(THEME_COLOR)
+          .addFields(
+            { name: '🏆 Punkty ogółem', value: `**${uData.points} pkt**`, inline: false },
+            { name: '⚔️ Typowanie Meczy', value: `Trafienia: **${mStats.correct}/${mStats.total}**\nSkuteczność: **${matchAcc}%**`, inline: true },
+            { name: '🎯 Pick\'Em', value: `Trafienia: **${pStats.correct}/${pStats.total}**\nSkuteczność: **${pickemAcc}%**`, inline: true }
+          )
+          .setFooter({ text: 'PGL Major Singapore 2026' })
+          .setTimestamp();
+
+        return interaction.reply({ embeds: [embed] });
+      }
+      
           content: `📊 **Twój Profil Typera:**\n` +
                    `🏆 Łączne punkty: **${u.points} pkt**\n\n` +
                    `📆 **Mecze:**\n` +
