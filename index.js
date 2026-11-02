@@ -188,7 +188,7 @@ client.on('interactionCreate', async interaction => {
                    `• Trafione: **${mStats.correct}**\n` +
                    `• Skuteczność: **${matchAcc}%**\n\n` +
                    `🛡️ **Pick'Em:**\n` +
-                   `• Obstawione sloty: **${pStats.total}**\n` +
+                   `• Obstawione typy: **${pStats.total}**\n` +
                    `• Trafione typy: **${pStats.correct}**\n` +
                    `• Skuteczność: **${pickemAcc}%**`,
           ephemeral: true
