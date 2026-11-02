@@ -409,16 +409,42 @@ client.on('interactionCreate', async interaction => {
         await saveDB();
         return interaction.reply({ content: 'Zapisano typ!', ephemeral: true });
       }
-      if (interaction.customId.startsWith('modal_pickem_')) {
-        const stage = interaction.customId.replace('modal_pickem_', '');
-        const t30 = interaction.fields.getTextInputValue('p_30').trim();
-        const t03 = interaction.fields.getTextInputValue('p_03').trim();
-        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
-        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
-        await saveDB();
-        return interaction.reply({ content: 'Zapisano Pick\'Em!', ephemeral: true });
-      }
+              if (interaction.customId.startsWith('modal_pickem_')) {
+          const stage = interaction.customId.split('_')[2];
+          const t30 = interaction.fields.getTextInputValue('p_30').trim();
+          const t03 = interaction.fields.getTextInputValue('p_03').trim();
+          const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
+
+          // --- TUTAJ DODAJEMY WALIDACJĘ DUPLIKATÓW ---
+          const t30List = t30.split(',').map(t => t.trim()).filter(Boolean);
+          const t03List = t03.split(',').map(t => t.trim()).filter(Boolean);
+          const tAdvList = tAdv.split(',').map(t => t.trim()).filter(Boolean);
+
+          const allTeams = [...t30List, ...t03List, ...tAdvList];
+          const lowerCaseTeams = allTeams.map(t => t.toLowerCase());
+          const hasDuplicates = new Set(lowerCaseTeams).size !== lowerCaseTeams.length;
+
+          if (hasDuplicates) {
+            return interaction.reply({
+              content: '❌ **Błąd w typowaniu!** Ta sama drużyna nie może się powtórzyć w różnych bilansach (np. w 3-0 i w awansujących). Sprawdź swoje wpisy!',
+              ephemeral: true
+            });
+          }
+          // ------------------------------------------
+
+          if (!memoryDB.pickems.userPicks) memoryDB.pickems.userPicks = {};
+          if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
+          
+          memoryDB.pickems.userPicks[interaction.user.id][stage] = { 
+            threeZero: t30, 
+            zeroThree: t03, 
+            advancing: tAdv 
+          };
+          
+          await saveDB();
+          return interaction.reply({ content: `Zapisano Pick'Em!`, ephemeral: true });
+              }
+      
     }
   } catch (err) {
     console.error('Błąd:', err);
