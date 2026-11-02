@@ -112,36 +112,37 @@ client.on('interactionCreate', async interaction => {
   try {
     await checkAndLockMatches();
 
-    if (interaction.isChatInputCommand()) {
-      const { commandName, options } = interaction;
-            // --- /mojpickem ---
-      if (commandName === 'mojpickem') {
-        const stage = options.getString('stage');
-        const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
+    if (!interaction.isChatInputCommand()) return;
 
-        if (!userPicks) {
-          return interaction.reply({ 
-            content: `❌ Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, 
-            ephemeral: true 
-          });
-        }
+  const { commandName, options } = interaction;
 
-        const embed = new EmbedBuilder()
-          .setTitle(`🎯 Twoje typy Pick'Em — Faza ${stage.toUpperCase()}`)
-          .setColor(THEME_COLOR)
-          .addFields(
-            { name: '🔥 Bilans 3-0', value: userPicks.threeZero || '*Brak*', inline: true },
-            { name: '💀 Bilans 0-3', value: userPicks.zeroThree || '*Brak*', inline: true },
-            { name: '✅ Awans (3-1 / 3-2)', value: userPicks.advancing || '*Brak*', inline: false }
-          )
-          .setFooter({ text: 'PGL Major Singapore 2026 • Statystyki typerów' })
-          .setTimestamp();
+  if (commandName === 'mojpickem') {
+    const stage = options.getString('stage');
+    const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
 
-        return interaction.reply({ 
-          embeds: [embed], 
-          ephemeral: true 
-        });
-      }
+    if (!userPicks) {
+      return interaction.reply({ 
+        content: `❌ Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, 
+        ephemeral: true 
+      });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🎯 Twoje typy Pick'Em — Faza ${stage.toUpperCase()}`)
+      .setColor(THEME_COLOR)
+      .addFields(
+        { name: '🔥 Bilans 3-0', value: userPicks.threeZero || '*Brak*', inline: true },
+        { name: '💀 Bilans 0-3', value: userPicks.zeroThree || '*Brak*', inline: true },
+        { name: '✅ Awans (3-1 / 3-2)', value: userPicks.advancing || '*Brak*', inline: false }
+      )
+      .setFooter({ text: 'PGL Major Singapore 2026 • Statystyki typerów' })
+      .setTimestamp();
+
+    return interaction.reply({ 
+      embeds: [embed], 
+      ephemeral: true 
+    });
+  }
       
 
       if (commandName === 'mecze') {
