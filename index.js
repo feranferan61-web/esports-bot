@@ -2,6 +2,8 @@ const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectM
 const { Pool } = require('pg');
 const http = require('http');
 const slashCommands = require('./commands.js');
+const THEME_COLOR = '#8B0000'; // Ciemny czerwony (motyw PGL Major)
+
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
