@@ -116,16 +116,15 @@ client.on('interactionCreate', async interaction => {
 
   const { commandName, options } = interaction;
 
-        if (commandName === 'mojpickem') {
+      if (commandName === 'mojpickem') {
         const stage = options.getString('stage');
         const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
-
         if (!userPicks) {
-          return interaction.reply({ 
-            content: `❌ Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, 
-            ephemeral: true 
-          });
+          return interaction.reply({ content: 'Nie masz jeszcze zapisanych typów Pick\'Em dla tej fazy.', ephemeral: true });
         }
+        return interaction.reply({ content: `Twoje typy (${stage}): 3-0: ${userPicks.threeZero}, 0-3: ${userPicks.zeroThree}, Awans: ${userPicks.advancing}`, ephemeral: true });
+      }
+    
 
         const embed = new EmbedBuilder()
           .setTitle(`🎯 Twoje typy Pick'Em — Faza ${stage.toUpperCase()}`)
