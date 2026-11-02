@@ -183,7 +183,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({
           content: `📊 **Twój Profil Typera:**\n` +
                    `🏆 Łączne punkty: **${u.points} pkt**\n\n` +
-                   `⚽ **Mecze:**\n` +
+                   `📆 **Mecze:**\n` +
                    `• Obstawione: **${mStats.total}**\n` +
                    `• Trafione: **${mStats.correct}**\n` +
                    `• Skuteczność: **${matchAcc}%**\n\n` +
