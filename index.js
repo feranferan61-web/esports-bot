@@ -115,7 +115,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
             // --- /mojpickem ---
-            if (commandName === 'mojpickem') {
+      if (commandName === 'mojpickem') {
         const stage = options.getString('stage');
         const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
 
@@ -137,8 +137,12 @@ client.on('interactionCreate', async interaction => {
           .setFooter({ text: 'PGL Major Singapore 2026 • Statystyki typerów' })
           .setTimestamp();
 
-        return interaction.reply({ embeds: [embed], ephemeral: true });
-            }
+        return interaction.reply({ 
+          embeds: [embed], 
+          ephemeral: true 
+        });
+      }
+      
 
       if (commandName === 'mecze') {
         const selectOptions = [];
