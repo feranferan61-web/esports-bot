@@ -49,6 +49,19 @@ const slashCommands = [
            { name: 'Stage 3', value: 'stage3' }
          )
     ),
+    new SlashCommandBuilder()
+    .setName('mojpickem')
+    .setDescription('Pokazuje Twoje zapisane typy Pick\'Em dla wybranej fazy')
+    .addStringOption(opt => 
+      opt.setName('stage')
+         .setDescription('Wybierz stage')
+         .setRequired(true)
+         .addChoices(
+           { name: 'Stage 1', value: 'stage1' },
+           { name: 'Stage 2', value: 'stage2' },
+           { name: 'Stage 3', value: 'stage3' }
+         )
+    ),
 
   // --- KOMENDY ADMINISTRACYJNE ---
   new SlashCommandBuilder()
