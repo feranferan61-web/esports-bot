@@ -115,7 +115,7 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
             // --- /mojpickem ---
-      if (commandName === 'mojpickem') {
+            if (commandName === 'mojpickem') {
         const stage = options.getString('stage');
         const userPicks = memoryDB.pickems?.userPicks?.[interaction.user.id]?.[stage];
 
@@ -138,8 +138,7 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp();
 
         return interaction.reply({ embeds: [embed], ephemeral: true });
-      }
-      
+            }
 
       if (commandName === 'mecze') {
         const selectOptions = [];
@@ -170,7 +169,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
-      if (commandName === 'profil') {
+            if (commandName === 'profil') {
         const targetUser = options.getUser('gracz') || interaction.user;
         const uData = memoryDB.users[targetUser.id] || { points: 0, matchStats: { total: 0, correct: 0 }, pickemStats: { total: 0, correct: 0 } };
         
@@ -193,7 +192,8 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp();
 
         return interaction.reply({ embeds: [embed] });
-      }
+            }
+      
       
           content: `📊 **Twój Profil Typera:**\n` +
                    `🏆 Łączne punkty: **${u.points} pkt**\n\n` +
