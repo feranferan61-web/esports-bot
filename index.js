@@ -143,6 +143,15 @@ client.on('interactionCreate', async interaction => {
         ephemeral: true 
       });
     }
+
+  } catch (err) {
+    console.error('Błąd w interactionCreate:', err);
+    if (!interaction.replied && !interaction.deferred) {
+      await interaction.reply({ content: 'Wystąpił błąd podczas wykonywania tej komendy.', ephemeral: true }).catch(() => {});
+    }
+  }
+});
+
         
     
       
