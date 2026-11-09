@@ -1,5 +1,12 @@
 const { SlashCommandBuilder, PermissionsBitField } = require('discord.js');
 
+const STAGE_CHOICES = [
+  { name: 'Stage 1', value: 'stage1' },
+  { name: 'Stage 2', value: 'stage2' },
+  { name: 'Stage 3', value: 'stage3' },
+  { name: 'Play-offy', value: 'playoffs' }
+];
+
 const slashCommands = [
   // --- KOMENDY DLA GRACZY ---
   new SlashCommandBuilder()
@@ -29,38 +36,27 @@ const slashCommands = [
       opt.setName('stage')
          .setDescription('Wybierz stage')
          .setRequired(true)
-         .addChoices(
-           { name: 'Stage 1', value: 'stage1' },
-           { name: 'Stage 2', value: 'stage2' },
-           { name: 'Stage 3', value: 'stage3' }
-         )
+         .addChoices(...STAGE_CHOICES)
     ),
 
   new SlashCommandBuilder()
     .setName('pickem')
-    .setDescription('Wybierz swoje typy Pick\'Em (3-0, 0-3, awanse)')
+    .setDescription('Wybierz swoje typy Pick\'Em (Stage 1-3 lub Play-offy)')
     .addStringOption(opt => 
       opt.setName('stage')
          .setDescription('Wybierz stage')
          .setRequired(true)
-         .addChoices(
-           { name: 'Stage 1', value: 'stage1' },
-           { name: 'Stage 2', value: 'stage2' },
-           { name: 'Stage 3', value: 'stage3' }
-         )
+         .addChoices(...STAGE_CHOICES)
     ),
-    new SlashCommandBuilder()
+
+  new SlashCommandBuilder()
     .setName('mojpickem')
     .setDescription('Pokazuje Twoje zapisane typy Pick\'Em dla wybranej fazy')
     .addStringOption(opt => 
       opt.setName('stage')
          .setDescription('Wybierz stage')
          .setRequired(true)
-         .addChoices(
-           { name: 'Stage 1', value: 'stage1' },
-           { name: 'Stage 2', value: 'stage2' },
-           { name: 'Stage 3', value: 'stage3' }
-         )
+         .addChoices(...STAGE_CHOICES)
     ),
 
   // --- KOMENDY ADMINISTRACYJNE ---
@@ -104,11 +100,7 @@ const slashCommands = [
       opt.setName('stage')
          .setDescription('Wybierz stage')
          .setRequired(true)
-         .addChoices(
-           { name: 'Stage 1', value: 'stage1' },
-           { name: 'Stage 2', value: 'stage2' },
-           { name: 'Stage 3', value: 'stage3' }
-         )
+         .addChoices(...STAGE_CHOICES)
     )
     .addStringOption(opt => opt.setName('druzyny').setDescription('Lista drużyn oddzielona przecinkami').setRequired(true))
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
@@ -120,15 +112,22 @@ const slashCommands = [
       opt.setName('stage')
          .setDescription('Wybierz stage')
          .setRequired(true)
-         .addChoices(
-           { name: 'Stage 1', value: 'stage1' },
-           { name: 'Stage 2', value: 'stage2' },
-           { name: 'Stage 3', value: 'stage3' }
-         )
+         .addChoices(...STAGE_CHOICES)
     )
-    .addStringOption(opt => opt.setName('oficjalne_30').setDescription('Oficjalne 3-0 (2 drużyny po przecinku)').setRequired(true))
-    .addStringOption(opt => opt.setName('oficjalne_03').setDescription('Oficjalne 0-3 (2 drużyny po przecinku)').setRequired(true))
-    .addStringOption(opt => opt.setName('oficjalne_awans').setDescription('Oficjalne awanse (6 drużyn po przecinku)').setRequired(true))
+    .addStringOption(opt => opt.setName('oficjalne_30').setDescription('Oficjalne 3-0 / Ćwierćfinaliści (po przecinku)').setRequired(true))
+    .addStringOption(opt => opt.setName('oficjalne_03').setDescription('Oficjalne 0-3 / Półfinaliści (po przecinku)').setRequired(true))
+    .addStringOption(opt => opt.setName('oficjalne_awans').setDescription('Oficjalne awanse / Zwycięzca turnieju (po przecinku)').setRequired(true))
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+
+  new SlashCommandBuilder()
+    .setName('zamknijpickem')
+    .setDescription('[Admin] Ręcznie zamyka możliwość edycji typów Pick\'Em dla wybranej fazy')
+    .addStringOption(opt => 
+      opt.setName('stage')
+         .setDescription('Wybierz stage do zablokowania')
+         .setRequired(true)
+         .addChoices(...STAGE_CHOICES)
+    )
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
 
   new SlashCommandBuilder()
@@ -138,4 +137,4 @@ const slashCommands = [
 ].map(cmd => cmd.toJSON());
 
 module.exports = slashCommands;
-      
+    
