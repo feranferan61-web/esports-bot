@@ -414,14 +414,15 @@ client.on('interactionCreate', async interaction => {
         const mId = interaction.values[0].replace('bet_match_', '');
         const match = memoryDB.matches[mId];
         if (!match || match.locked) return interaction.reply({ content: 'Mecz niedostępny.', ephemeral: true });
-        const modal = new ModalBuilder().setCustomId(`modal_bet_${mId}`).setTitle(`Obstaw: ${match.details}`);
+        
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_bet_${mId}`)
+          .setTitle(`Obstaw: ${match.details}`);
+
         modal.addComponents(
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (${match.teamA}/${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_score').setLabel(`Wynik (${match.format})`).setStyle(TextInputStyle.Short).setRequired(test => test)) // Zastąpione poprawnym wywołaniem
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_score').setLabel(`Wynik (${match.format})`).setStyle(TextInputStyle.Short).setRequired(true))
         );
-        // Poprawka błędu składniowego linii 446 (było ucięte lub błędne)
-        // Poniżej poprawna wersja modalnego formularza betu:
-        modal.components[1].components[0].setLabel(`Wynik (${match.format})`).setCustomId('b_score').setStyle(TextInputStyle.Short).setRequired(true);
 
         return await interaction.showModal(modal);
       }
@@ -443,4 +444,7 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: '❌ Ta faza jest już zamknięta!', ephemeral: true });
         }
         const t30 = interaction.fields.getTextInputValue('p_30').trim();
-        const t03 = inter
+        const t03 = interaction.fields.getTextInputValue('p_03').trim();
+        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
+        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
+        memoryDB.pickems.userPicks[interaction.user.id][sta
