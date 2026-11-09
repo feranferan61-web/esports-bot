@@ -9,8 +9,9 @@ const slashCommands = [
         .setDescription('Wybierz fazę turnieju')
         .setRequired(true)
         .addChoices(
-          { name: 'Opening Stage', value: 'opening' },
-          { name: 'Elimination Stage', value: 'elimination' },
+          { name: 'Stage 1', value: 'stage1' },
+          { name: 'Stage 2', value: 'stage2' },
+          { name: 'Stage 3', value: 'stage3' },
           { name: 'Playoffs', value: 'playoffs' }
         )
     ),
@@ -53,8 +54,9 @@ const slashCommands = [
         .setDescription('Wybierz fazę')
         .setRequired(true)
         .addChoices(
-          { name: 'Opening Stage', value: 'opening' },
-          { name: 'Elimination Stage', value: 'elimination' },
+          { name: 'Stage 1', value: 'stage1' },
+          { name: 'Stage 2', value: 'stage2' },
+          { name: 'Stage 3', value: 'stage3' },
           { name: 'Playoffs', value: 'playoffs' }
         )
     ),
@@ -67,8 +69,9 @@ const slashCommands = [
         .setDescription('Wybierz fazę')
         .setRequired(true)
         .addChoices(
-          { name: 'Opening Stage', value: 'opening' },
-          { name: 'Elimination Stage', value: 'elimination' },
+          { name: 'Stage 1', value: 'stage1' },
+          { name: 'Stage 2', value: 'stage2' },
+          { name: 'Stage 3', value: 'stage3' },
           { name: 'Playoffs', value: 'playoffs' }
         )
     ),
@@ -81,8 +84,9 @@ const slashCommands = [
         .setDescription('Wybierz fazę do zamknięcia')
         .setRequired(true)
         .addChoices(
-          { name: 'Opening Stage', value: 'opening' },
-          { name: 'Elimination Stage', value: 'elimination' },
+          { name: 'Stage 1', value: 'stage1' },
+          { name: 'Stage 2', value: 'stage2' },
+          { name: 'Stage 3', value: 'stage3' },
           { name: 'Playoffs', value: 'playoffs' }
         )
     )
@@ -147,8 +151,9 @@ const slashCommands = [
         .setDescription('Wybierz fazę')
         .setRequired(true)
         .addChoices(
-          { name: 'Opening Stage', value: 'opening' },
-          { name: 'Elimination Stage', value: 'elimination' },
+          { name: 'Stage 1', value: 'stage1' },
+          { name: 'Stage 2', value: 'stage2' },
+          { name: 'Stage 3', value: 'stage3' },
           { name: 'Playoffs', value: 'playoffs' }
         )
     )
@@ -163,8 +168,9 @@ const slashCommands = [
         .setDescription('Wybierz fazę')
         .setRequired(true)
         .addChoices(
-          { name: 'Opening Stage', value: 'opening' },
-          { name: 'Elimination Stage', value: 'elimination' },
+          { name: 'Stage 1', value: 'stage1' },
+          { name: 'Stage 2', value: 'stage2' },
+          { name: 'Stage 3', value: 'stage3' },
           { name: 'Playoffs', value: 'playoffs' }
         )
     )
@@ -180,4 +186,4 @@ const slashCommands = [
 ].map(command => command.toJSON());
 
 module.exports = slashCommands;
-      
+  
