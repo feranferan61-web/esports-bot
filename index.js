@@ -112,7 +112,8 @@ client.on('interactionCreate', async interaction => {
 
     if (interaction.isChatInputCommand()) {
       const { commandName, options } = interaction;
-            // --- /mojpickem ---
+
+      // --- /mojpickem ---
       if (commandName === 'mojpickem') {
         const stage = options.getString('stage');
         const userId = interaction.user.id;
@@ -124,18 +125,18 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: `📋 Nie masz jeszcze zapisanych typów Pick'Em dla fazy **${stage.toUpperCase()}**.`, ephemeral: true });
         }
 
+        const isPlayoffs = stage === 'playoffs';
         const embed = new EmbedBuilder()
           .setTitle(`🎯 Twoje typy Pick'Em: ${stage.toUpperCase()}`)
           .setColor('#0099ff')
           .addFields(
-            { name: '🔥 Bilans 3-0', value: userPick.threeZero || 'Brak', inline: false },
-            { name: '❌ Bilans 0-3', value: userPick.zeroThree || 'Brak', inline: false },
-            { name: '🛡️ Awans do kolejnej fazy', value: userPick.advancing || 'Brak', inline: false }
+            { name: isPlayoffs ? '🥊 Ćwierćfinaliści (4)' : '🔥 Bilans 3-0', value: userPick.threeZero || 'Brak', inline: false },
+            { name: isPlayoffs ? '⚔️ Półfinaliści (2)' : '❌ Bilans 0-3', value: userPick.zeroThree || 'Brak', inline: false },
+            { name: isPlayoffs ? '🏆 Zwycięzca turnieju (1)' : '🛡️ Awans do kolejnej fazy', value: userPick.advancing || 'Brak', inline: false }
           );
 
         return interaction.reply({ embeds: [embed], ephemeral: true });
       }
-      
 
       if (commandName === 'mecze') {
         const selectOptions = [];
@@ -166,7 +167,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: desc, ephemeral: true });
       }
 
-            if (commandName === 'profil') {
+      if (commandName === 'profil') {
         const userId = interaction.user.id;
         const u = memoryDB.users[userId] || { 
           points: 0, 
@@ -193,8 +194,7 @@ client.on('interactionCreate', async interaction => {
                    `• Skuteczność: **${pickemAcc}%**`,
           ephemeral: true
         });
-    }
-      
+      }
 
       if (commandName === 'ranking') {
         const sorted = Object.entries(memoryDB.users).sort((a, b) => (b[1].points || 0) - (a[1].points || 0)).slice(0, 10);
@@ -236,15 +236,42 @@ client.on('interactionCreate', async interaction => {
       if (commandName === 'pickem') {
         const stage = options.getString('stage');
         const data = memoryDB.pickems.stages[stage];
-        if (!data || !data.teams?.length) return interaction.reply({ content: 'Faza nieskonfigurowana.', ephemeral: true });
-        if (data.locked) return interaction.reply({ content: 'Zablokowane.', ephemeral: true });
-        const modal = new ModalBuilder().setCustomId(`modal_pickem_${stage}`).setTitle(`Pick'Em ${stage}`);
-        modal.addComponents(
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_30').setLabel('3-0').setStyle(TextInputStyle.Short).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_03').setLabel('0-3').setStyle(TextInputStyle.Short).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_adv').setLabel('Awans (6)').setStyle(TextInputStyle.Paragraph).setRequired(true))
-        );
+        
+        // Sprawdzenie czy faza jest zablokowana ręcznie przez admina
+        if (data?.locked || memoryDB.pickems?.stages?.[stage]?.locked) {
+          return interaction.reply({ content: '❌ Ta faza została zamknięta przez administratora. Nie można już zmieniać typów.', ephemeral: true });
+        }
+
+        const isPlayoffs = stage === 'playoffs';
+        const modal = new ModalBuilder()
+          .setCustomId(`modal_pickem_${stage}`)
+          .setTitle(isPlayoffs ? 'Pick\'Em: Play-offy' : `Pick'Em ${stage.toUpperCase()}`);
+
+        if (isPlayoffs) {
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_30').setLabel('4 Zwycięzców Ćwierćfinałów').setStyle(TextInputStyle.Paragraph).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_03').setLabel('2 Zwycięzców Półfinałów').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_adv').setLabel('Zwycięzca Turnieju (1 drużyna)').setStyle(TextInputStyle.Short).setRequired(true))
+          );
+        } else {
+          modal.addComponents(
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_30').setLabel('3-0').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_03').setLabel('0-3').setStyle(TextInputStyle.Short).setRequired(true)),
+            new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('p_adv').setLabel('Awans (6)').setStyle(TextInputStyle.Paragraph).setRequired(true))
+          );
+        }
         return await interaction.showModal(modal);
+      }
+
+      if (commandName === 'zamknijpickem') {
+        const stage = options.getString('stage');
+        if (!memoryDB.pickems.stages[stage]) {
+          memoryDB.pickems.stages[stage] = { locked: true, teams: [] };
+        } else {
+          memoryDB.pickems.stages[stage].locked = true;
+        }
+        await saveDB();
+        return interaction.reply({ content: `🔒 Faza **${stage.toUpperCase()}** została zamknięta! Gracze nie mogą już edytować typów.` });
       }
 
       if (commandName === 'dodajmecz') {
@@ -323,11 +350,13 @@ client.on('interactionCreate', async interaction => {
         await saveDB();
         return interaction.reply({ content: `Skonfigurowano ${stage}` });
       }
+
       if (commandName === 'rozliczpickem') {
         const stage = options.getString('stage');
         const off30 = options.getString('oficjalne_30').split(',').map(t => t.trim().toLowerCase());
         const off03 = options.getString('oficjalne_03').split(',').map(t => t.trim().toLowerCase());
         const offAdv = options.getString('oficjalne_awans').split(',').map(t => t.trim().toLowerCase());
+        const isPlayoffs = stage === 'playoffs';
 
         for (const [uId, stages] of Object.entries(memoryDB.pickems.userPicks || {})) {
           const p = stages[stage];
@@ -342,32 +371,32 @@ client.on('interactionCreate', async interaction => {
 
           let pts = 0;
 
-          // Rozliczanie 3-0
-          const t30List = p.threeZero?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
-          t30List.forEach(t => {
+          // Rozliczanie pierwszej kategorii (3-0 lub Ćwierćfinał - 1 pkt za każdego)
+          const list1 = p.threeZero?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
+          list1.forEach(t => {
             memoryDB.users[uId].pickemStats.total++;
             if (off30.includes(t)) {
-              pts += 3;
+              pts += isPlayoffs ? 1 : 3;
               memoryDB.users[uId].pickemStats.correct++;
             }
           });
 
-          // Rozliczanie 0-3
-          const t03List = p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
-          t03List.forEach(t => {
+          // Rozliczanie drugiej kategorii (0-3 lub Półfinał - 2 pkt za każdego)
+          const list2 = p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
+          list2.forEach(t => {
             memoryDB.users[uId].pickemStats.total++;
             if (off03.includes(t)) {
-              pts += 3;
+              pts += isPlayoffs ? 2 : 3;
               memoryDB.users[uId].pickemStats.correct++;
             }
           });
 
-          // Rozliczanie awansów
-          const tAdvList = p.advancing?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
-          tAdvList.forEach(t => {
+          // Rozliczanie trzeciej kategorii (Awans lub Zwycięzca - 3 pkt za zwycięzcę / 1 pkt za awans)
+          const list3 = p.advancing?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
+          list3.forEach(t => {
             memoryDB.users[uId].pickemStats.total++;
             if (offAdv.includes(t)) {
-              pts += 1;
+              pts += isPlayoffs ? 3 : 1;
               memoryDB.users[uId].pickemStats.correct++;
             }
           });
@@ -378,7 +407,6 @@ client.on('interactionCreate', async interaction => {
         await saveDB();
         return interaction.reply({ content: `Rozliczono Pick'Em dla ${stage} i zaktualizowano statystyki!` });
       }
-      
 
       if (commandName === 'resetranking') {
         memoryDB.users = {};
@@ -411,19 +439,8 @@ client.on('interactionCreate', async interaction => {
       }
       if (interaction.customId.startsWith('modal_pickem_')) {
         const stage = interaction.customId.replace('modal_pickem_', '');
+        if (memoryDB.pickems?.stages?.[stage]?.locked) {
+          return interaction.reply({ content: '❌ Ta faza jest już zamknięta!', ephemeral: true });
+        }
         const t30 = interaction.fields.getTextInputValue('p_30').trim();
-        const t03 = interaction.fields.getTextInputValue('p_03').trim();
-        const tAdv = interaction.fields.getTextInputValue('p_adv').trim();
-        if (!memoryDB.pickems.userPicks[interaction.user.id]) memoryDB.pickems.userPicks[interaction.user.id] = {};
-        memoryDB.pickems.userPicks[interaction.user.id][stage] = { threeZero: t30, zeroThree: t03, advancing: tAdv };
-        await saveDB();
-        return interaction.reply({ content: 'Zapisano Pick\'Em!', ephemeral: true });
-      }
-    }
-  } catch (err) {
-    console.error('Błąd:', err);
-  }
-});
-
-client.login(process.env.DISCORD_TOKEN);
-    
+        const t
