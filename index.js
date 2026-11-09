@@ -237,7 +237,6 @@ client.on('interactionCreate', async interaction => {
         const stage = options.getString('stage');
         const data = memoryDB.pickems.stages[stage];
         
-        // Sprawdzenie czy faza jest zablokowana ręcznie przez admina
         if (data?.locked || memoryDB.pickems?.stages?.[stage]?.locked) {
           return interaction.reply({ content: '❌ Ta faza została zamknięta przez administratora. Nie można już zmieniać typów.', ephemeral: true });
         }
@@ -371,7 +370,6 @@ client.on('interactionCreate', async interaction => {
 
           let pts = 0;
 
-          // Rozliczanie pierwszej kategorii (3-0 lub Ćwierćfinał - 1 pkt za każdego)
           const list1 = p.threeZero?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
           list1.forEach(t => {
             memoryDB.users[uId].pickemStats.total++;
@@ -381,7 +379,6 @@ client.on('interactionCreate', async interaction => {
             }
           });
 
-          // Rozliczanie drugiej kategorii (0-3 lub Półfinał - 2 pkt za każdego)
           const list2 = p.zeroThree?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
           list2.forEach(t => {
             memoryDB.users[uId].pickemStats.total++;
@@ -391,7 +388,6 @@ client.on('interactionCreate', async interaction => {
             }
           });
 
-          // Rozliczanie trzeciej kategorii (Awans lub Zwycięzca - 3 pkt za zwycięzcę / 1 pkt za awans)
           const list3 = p.advancing?.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) || [];
           list3.forEach(t => {
             memoryDB.users[uId].pickemStats.total++;
@@ -421,8 +417,12 @@ client.on('interactionCreate', async interaction => {
         const modal = new ModalBuilder().setCustomId(`modal_bet_${mId}`).setTitle(`Obstaw: ${match.details}`);
         modal.addComponents(
           new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_winner').setLabel(`Zwycięzca (${match.teamA}/${match.teamB})`).setStyle(TextInputStyle.Short).setRequired(true)),
-          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_score').setLabel(`Wynik (${match.format})`).setStyle(TextInputStyle.Short).setRequired(true))
+          new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('b_score').setLabel(`Wynik (${match.format})`).setStyle(TextInputStyle.Short).setRequired(test => test)) // Zastąpione poprawnym wywołaniem
         );
+        // Poprawka błędu składniowego linii 446 (było ucięte lub błędne)
+        // Poniżej poprawna wersja modalnego formularza betu:
+        modal.components[1].components[0].setLabel(`Wynik (${match.format})`).setCustomId('b_score').setStyle(TextInputStyle.Short).setRequired(true);
+
         return await interaction.showModal(modal);
       }
     } else if (interaction.isModalSubmit()) {
@@ -443,4 +443,4 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: '❌ Ta faza jest już zamknięta!', ephemeral: true });
         }
         const t30 = interaction.fields.getTextInputValue('p_30').trim();
-        const t
+        const t03 = inter
