@@ -261,8 +261,8 @@ client.on('interactionCreate', async interaction => {
         memoryDB.userChannels[user.id] = channel.id;
         await saveDB();
         return interaction.reply({ content: `Stworzono kanał: <#${channel.id}>`, ephemeral: true });
-      }
-            if (commandName === 'druzyny') {
+          }
+          if (commandName === 'druzyny') {
         const stage = options.getString('stage');
         const data = memoryDB.pickems.stages[stage];
         if (!data || !data.teams?.length) return interaction.reply({ content: 'Faza nieskonfigurowana.', ephemeral: true });
